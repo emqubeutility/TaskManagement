@@ -2,6 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Fragment, useState, type FormEvent } from 'react'
 import { dubaiMonth } from '../shared/dates'
 import { api, ApiError } from './api'
+import { confirmDialog, notifySuccess } from './dialogs'
+import { Icon, type IconName } from './icons'
+import { go, sectionOf, useHash, type AdminSection } from './hash'
 import { ClientsView, TypesView, UsersView } from './views/Admin'
 import { Board } from './views/Board'
 import { Overview } from './views/Overview'
@@ -12,6 +15,8 @@ import { TemplatesView } from './views/Templates'
 import type { Filters, User } from './types'
 
 type Tab = 'overview' | 'board' | 'tracker' | 'list' | 'templates' | 'import' | 'admin' | 'clients' | 'types'
+
+const SECTION_TAB: Record<AdminSection, Tab> = { users: 'admin', clients: 'clients', types: 'types' }
 
 const SUBTITLE: Record<Tab, string> = {
   overview: 'What needs you today, what is late, and how busy the team is.',
@@ -46,8 +51,8 @@ function Login() {
         <h1>Plan. Track. Deliver.<br /><span>Together.</span></h1>
         <p>Run every piece of content from idea to posting. Each task moves through your team, one accept, start and close at a time.</p>
         <div className="hero-points">
-          {[['☑', 'Organize', 'Your work'], ['👥', 'Collaborate', 'With your team'], ['📊', 'Track', 'Progress'], ['◎', 'Achieve', 'Your goals']].map(([i, a, b]) => (
-            <div key={a}><span className="hero-icon">{i}</span><strong>{a}</strong><small>{b}</small></div>
+          {([['checks', 'Organize', 'Your work'], ['users', 'Collaborate', 'With your team'], ['chart', 'Track', 'Progress'], ['target', 'Achieve', 'Your goals']] as const).map(([i, a, b]) => (
+            <div key={a}><span className="hero-icon"><Icon name={i} size={22} /></span><strong>{a}</strong><small>{b}</small></div>
           ))}
         </div>
       </section>
@@ -57,8 +62,8 @@ function Login() {
         <label>Email address<input name="email" type="email" autoComplete="username" required autoFocus /></label>
         <label>Password<input name="password" type="password" autoComplete="current-password" required /></label>
         {error && <p className="error">{error}</p>}
-        <button className="primary big" disabled={login.isPending}>Sign in →</button>
-        <p className="secure">🛡 Your data is secure with us</p>
+        <button className="primary big with-icon" disabled={login.isPending}>Sign in <Icon name="forward" /></button>
+        <p className="secure"><Icon name="shield" size={16} /> Your data is secure with us</p>
       </form>
     </div>
   )
@@ -70,12 +75,16 @@ function Brand() {
   )
 }
 
-function ChangePassword({ user }: { user: User }) {
+// Forced at first sign-in (no onClose), or opened voluntarily from the sidebar (onClose = cancel/done).
+function ChangePassword({ user, onClose }: { user: User; onClose?: () => void }) {
   const qc = useQueryClient()
   const [error, setError] = useState('')
   const change = useMutation({
     mutationFn: (v: { currentPassword: string; newPassword: string }) => api('/auth/change-password', { body: v }),
-    onSuccess: () => qc.setQueryData(['me'], { ...user, mustChangePassword: false }),
+    onSuccess: () => {
+      qc.setQueryData(['me'], { ...user, mustChangePassword: false })
+      if (onClose) { onClose(); notifySuccess('Password changed') }
+    },
     onError: (e) => setError(e.message),
   })
   const submit = (e: FormEvent<HTMLFormElement>) => {
@@ -88,13 +97,14 @@ function ChangePassword({ user }: { user: User }) {
   return (
     <div className="center-card">
       <form className="login-card" onSubmit={submit}>
-        <h2>Choose your password</h2>
-        <p className="muted">Hi {user.name}. Replace the temporary password before you continue.</p>
-        <label>Temporary password<input name="currentPassword" type="password" required autoComplete="current-password" /></label>
+        <h2>{onClose ? 'Change your password' : 'Choose your password'}</h2>
+        <p className="muted">{onClose ? 'Enter your current password, then a new one.' : `Hi ${user.name}. Replace the temporary password before you continue.`}</p>
+        <label>{onClose ? 'Current password' : 'Temporary password'}<input name="currentPassword" type="password" required autoComplete="current-password" /></label>
         <label>New password (8+ characters)<input name="newPassword" type="password" minLength={8} required autoComplete="new-password" /></label>
         <label>Repeat new password<input name="confirm" type="password" minLength={8} required autoComplete="new-password" /></label>
         {error && <p className="error">{error}</p>}
         <button className="primary big" disabled={change.isPending}>Save password</button>
+        {onClose && <button type="button" className="link" onClick={onClose}>Cancel</button>}
       </form>
     </div>
   )
@@ -102,20 +112,39 @@ function ChangePassword({ user }: { user: User }) {
 
 function Shell({ me }: { me: User }) {
   const qc = useQueryClient()
-  const [tab, setTab] = useState<Tab>('overview')
+  const [mainTab, setMainTab] = useState<Tab>('overview')
+  const section = sectionOf(useHash())
+  // Admin pages live in the URL hash (#/users/12/edit); every other tab is plain state.
+  const tab: Tab = me.role === 'admin' && section ? SECTION_TAB[section] : mainTab
+  const setTab = (k: Tab) => {
+    const adminSection = (Object.keys(SECTION_TAB) as AdminSection[]).find((s) => SECTION_TAB[s] === k)
+    if (adminSection) return go(`/${adminSection}`)
+    setMainTab(k)
+    go('')
+  }
+  const [changingPassword, setChangingPassword] = useState(false)
   const [filters, setFilters] = useState<Filters>({ month: dubaiMonth(), owner: '', client: '', type: '' })
   const logout = useMutation({
     mutationFn: () => api('/auth/logout', { method: 'POST', body: {} }),
-    onSuccess: () => { qc.clear(); qc.setQueryData(['me'], null) },
+    // Even if the server says 401 (session already gone) the person asked to leave, so always end on the sign-in page.
+    // Keep the 'me' query itself (App is watching it) and drop everything else so no stale data or polling survives.
+    onError: () => {},
+    onSettled: () => {
+      go('')
+      qc.setQueryData(['me'], null)
+      qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'me' })
+    },
   })
 
-  const tabs: [Tab, string, string][] = [
-    ['overview', 'Overview', '⌂'], ['board', 'Board', '▦'], ['tracker', 'Tracker', '▤'], ['list', 'List', '☰'],
-    ['templates', 'Templates', '❖'], ['import', 'Import / Clone', '⇪'],
+  const tabs: [Tab, string, IconName][] = [
+    ['overview', 'Overview', 'home'], ['board', 'Board', 'board'], ['tracker', 'Tracker', 'table'], ['list', 'List', 'list'],
+    ['templates', 'Templates', 'layers'], ['import', 'Import / Clone', 'upload'],
   ]
-  if (me.role === 'admin') tabs.push(['admin', 'Admin / Users', '⚙'], ['clients', 'Clients', '◫'], ['types', 'Task types', '⌗'])
+  if (me.role === 'admin') tabs.push(['admin', 'Admin / Users', 'users'], ['clients', 'Clients', 'briefcase'], ['types', 'Task types', 'tag'])
   const filtered = tab === 'board' || tab === 'tracker' || tab === 'list'
   const title = tabs.find(([k]) => k === tab)![1]
+
+  if (changingPassword) return <ChangePassword user={me} onClose={() => setChangingPassword(false)} />
 
   return (
     <div className="shell">
@@ -126,15 +155,20 @@ function Shell({ me }: { me: User }) {
             <Fragment key={k}>
               {k === 'admin' && <span className="nav-label">Manage</span>}
               <button className={tab === k ? 'nav-item active' : 'nav-item'} onClick={() => setTab(k)}>
-                <span className="nav-icon">{icon}</span>{label}
+                <span className="nav-icon"><Icon name={icon} /></span>{label}
               </button>
             </Fragment>
           ))}
         </nav>
-        <div className="side-user">
-          <span className="avatar big" style={{ background: me.colour }}>{me.initials}</span>
-          <span className="who-name"><strong>{me.name}</strong><small>{me.role === 'admin' ? 'Admin' : 'Team member'}</small></span>
-          <button className="link" onClick={() => logout.mutate()} title="Sign out">⎋</button>
+        <div className="side-account">
+          <div className="side-user">
+            <span className="avatar big" style={{ background: me.colour }}>{me.initials}</span>
+            <span className="who-name"><strong>{me.name}</strong><small>{me.role === 'admin' ? 'Admin' : 'Team member'}</small></span>
+          </div>
+          <button className="nav-item" onClick={() => setChangingPassword(true)}><span className="nav-icon"><Icon name="key" /></span>Change password</button>
+          <button className="nav-item" disabled={logout.isPending} onClick={async () => {
+            if (await confirmDialog({ title: 'Sign out?', message: 'You will need to sign in again to continue.', confirmLabel: 'Sign out' })) logout.mutate()
+          }}><span className="nav-icon"><Icon name="logout" /></span>Sign out</button>
         </div>
       </aside>
       <div className="content">

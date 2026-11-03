@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { api } from '../api'
 import { confirmDialog } from '../dialogs'
 import { useTemplates } from '../hooks'
+import { Icon } from '../icons'
 import type { User } from '../types'
 import { Avatar, FlowEditor, PersonName } from './FlowEditor'
 
@@ -32,7 +33,7 @@ export function TemplatesView({ me }: { me: User }) {
               )}
             </div>
             <p className="flow-line">
-              {t.userIds.map((id, i) => <span key={i}><Avatar userId={id} size={20} /> <PersonName id={id} />{i < t.userIds.length - 1 ? ' → ' : ''}</span>)}
+              {t.userIds.map((id, i) => <span key={i} className="flow-step"><Avatar userId={id} size={20} /> <PersonName id={id} />{i < t.userIds.length - 1 && <Icon name="forward" size={14} className="flow-arrow" />}</span>)}
             </p>
           </div>
         ))}

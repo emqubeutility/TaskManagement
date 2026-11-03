@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { dubaiMonth, dubaiToday } from '../../shared/dates'
+import { Icon } from '../icons'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -44,9 +45,9 @@ function Popover({ display, placeholder, value, required, children, render }: {
 function Nav({ title, onPrev, onNext }: { title: string; onPrev: () => void; onNext: () => void }) {
   return (
     <div className="pop-nav">
-      <button type="button" className="icon" onClick={onPrev} aria-label="Previous">‹</button>
+      <button type="button" className="icon" onClick={onPrev} aria-label="Previous"><Icon name="prev" size={16} /></button>
       <strong>{title}</strong>
-      <button type="button" className="icon" onClick={onNext} aria-label="Next">›</button>
+      <button type="button" className="icon" onClick={onNext} aria-label="Next"><Icon name="next" size={16} /></button>
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { dubaiToday } from '../../shared/dates'
 import { useClients, useTaskActions, useTasks, useTypes, useUsers } from '../hooks'
 import { currentStep, STATUS_LABEL, type Filters, type StepStatus, type Task, type User } from '../types'
+import { Icon } from '../icons'
 import { Avatar } from './FlowEditor'
 import { TaskDialog } from './TaskDialog'
 
@@ -55,8 +56,8 @@ export function Card({ task, me, index, count, onEdit, move }: {
         <button className="link title" onClick={onEdit}>{task.title}</button>
         {canReorder && (
           <span className="row-actions">
-            <button className="icon" disabled={index === 0} onClick={() => move!(-1)} aria-label="Move up" title="Higher priority">↑</button>
-            <button className="icon" disabled={index === count - 1} onClick={() => move!(1)} aria-label="Move down" title="Lower priority">↓</button>
+            <button className="icon" disabled={index === 0} onClick={() => move!(-1)} aria-label="Move up" title="Higher priority"><Icon name="up" size={14} /></button>
+            <button className="icon" disabled={index === count - 1} onClick={() => move!(1)} aria-label="Move down" title="Lower priority"><Icon name="down" size={14} /></button>
           </span>
         )}
       </div>
@@ -157,7 +158,7 @@ export function Board({ me, filters }: { me: User; filters: Filters }) {
       <div className="board">
         {!onlyMine && columns.has(UNASSIGNED) && renderColumn(UNASSIGNED, 'No flow yet', 'Add people to its flow to start it')}
         {visibleUsers.map((u) => renderColumn(String(u.id), <><Avatar userId={u.id} size={22} /> {u.id === me.id ? 'You' : u.name}</>, u.id === me.id ? 'Tasks waiting on you' : `Tasks with ${u.name.split(' ')[0]}`))}
-        {!onlyMine && renderColumn(RECENT_DONE, '✓ Completed', 'Finished in the last 7 days')}
+        {!onlyMine && renderColumn(RECENT_DONE, <><Icon name="check" size={14} /> Completed</>, 'Finished in the last 7 days')}
       </div>
       {editing && (
         <TaskDialog

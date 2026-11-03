@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
+import { Icon } from './icons'
 
 // Themed replacements for alert / confirm / prompt. They work from anywhere (including
 // non-React code such as the query client) because state lives in this module.
@@ -91,7 +92,7 @@ export function DialogHost() {
       <div className="toasts" aria-live="polite">
         {toasts.map((t) => (
           <div key={t.id} className={`toast ${t.kind}`} onClick={() => set({ toasts: state.toasts.filter((x) => x.id !== t.id) })}>
-            <span className="toast-icon">{t.kind === 'success' ? '✓' : t.kind === 'error' ? '!' : 'i'}</span>
+            <span className="toast-icon"><Icon name={t.kind === 'success' ? 'check' : t.kind === 'error' ? 'alert' : 'info'} size={14} /></span>
             <span>{t.message}</span>
           </div>
         ))}

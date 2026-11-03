@@ -132,6 +132,9 @@ userRoutes.patch(
     if (id === me.id && (rest.active === false || rest.role === 'member')) {
       throw new HTTPException(400, { message: 'You cannot deactivate or demote your own account' })
     }
+    if (id === me.id && resetPassword) {
+      throw new HTTPException(400, { message: 'Use "Change password" in the sidebar to change your own password' })
+    }
     const patch: Partial<typeof users.$inferInsert> = { ...rest }
     if (rest.name) patch.initials = makeInitials(rest.name)
     if (rest.email) {
@@ -194,6 +197,7 @@ templateRoutes.post('/', zValidator('json', z.object({ name: z.string().trim().m
   const { name, userIds } = c.req.valid('json')
   const me = c.get('user')
   const db = getDb()
+  if (new Set(userIds).size !== userIds.length) throw new HTTPException(400, { message: 'A person can only appear once in a flow' })
   const [dupe] = await db.select({ id: templates.id }).from(templates).where(eq(templates.name, name))
   if (dupe) throw new HTTPException(409, { message: 'A template with that name exists' })
   const id = await db.transaction(async (tx) => {

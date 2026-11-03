@@ -1,4 +1,5 @@
 import { useUsers } from '../hooks'
+import { Icon } from '../icons'
 
 export function Avatar({ userId, size = 24 }: { userId: number; size?: number }) {
   const u = useUsers().data?.find((x) => x.id === userId)
@@ -13,7 +14,8 @@ export function FlowEditor({ value, onChange, locked = [], disabled = false }: {
   locked?: number[]
   disabled?: boolean
 }) {
-  const users = (useUsers().data ?? []).filter((u) => u.active)
+  // A person can appear only once in a flow, so anyone already in it is not offered again.
+  const users = (useUsers().data ?? []).filter((u) => u.active && !value.includes(u.id) && !locked.includes(u.id))
   const move = (i: number, d: -1 | 1) => {
     const next = [...value]
     ;[next[i], next[i + d]] = [next[i + d], next[i]]
@@ -23,16 +25,16 @@ export function FlowEditor({ value, onChange, locked = [], disabled = false }: {
     <div className="flow-editor">
       <ol>
         {locked.map((id, i) => (
-          <li key={`l${i}`} className="locked"><Avatar userId={id} /> <PersonName id={id} /> <span className="muted">done</span></li>
+          <li key={`l${i}`} className="locked"><span className="step-no">{i + 1}</span><Avatar userId={id} /><span className="grow"><PersonName id={id} /></span> <span className="muted">done</span></li>
         ))}
         {value.map((id, i) => (
           <li key={`${id}-${i}`}>
-            <Avatar userId={id} /> <PersonName id={id} />
+            <span className="step-no">{locked.length + i + 1}</span><Avatar userId={id} /><span className="grow"><PersonName id={id} /></span>
             {!disabled && (
               <span className="row-actions">
-                <button type="button" className="icon" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move earlier">↑</button>
-                <button type="button" className="icon" disabled={i === value.length - 1} onClick={() => move(i, 1)} aria-label="Move later">↓</button>
-                <button type="button" className="icon" onClick={() => onChange(value.filter((_, j) => j !== i))} aria-label="Remove">✕</button>
+                <button type="button" className="icon" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move earlier"><Icon name="up" size={14} /></button>
+                <button type="button" className="icon" disabled={i === value.length - 1} onClick={() => move(i, 1)} aria-label="Move later"><Icon name="down" size={14} /></button>
+                <button type="button" className="icon" onClick={() => onChange(value.filter((_, j) => j !== i))} aria-label="Remove"><Icon name="x" size={14} /></button>
               </span>
             )}
           </li>
@@ -41,7 +43,7 @@ export function FlowEditor({ value, onChange, locked = [], disabled = false }: {
       </ol>
       {!disabled && (
         <select value="" onChange={(e) => e.target.value && onChange([...value, Number(e.target.value)])}>
-          <option value="">+ Add a person…</option>
+          <option value="">{users.length ? '+ Add a person…' : 'Everyone is already added'}</option>
           {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
       )}

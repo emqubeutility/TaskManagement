@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Fragment, useState, type FormEvent } from 'react'
+import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import { dubaiMonth } from '../shared/dates'
 import { api, ApiError } from './api'
 import { confirmDialog, notifySuccess } from './dialogs'
@@ -113,6 +113,39 @@ function ChangePassword({ user, onClose }: { user: User; onClose?: () => void })
   )
 }
 
+/** Who am I signed in as, with the way to change my password. */
+function ProfilePopup({ me, onClose, onChangePassword }: { me: User; onClose: () => void; onChangePassword: () => void }) {
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', key)
+    return () => document.removeEventListener('keydown', key)
+  }, [onClose])
+  return (
+    <div className="overlay modal-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="dialog small-dialog" role="dialog" aria-modal="true" aria-label="My profile">
+        <div className="profile">
+          <span className="avatar xl" style={{ background: me.colour }}>{me.initials}</span>
+          <div>
+            <strong className="profile-name">{me.name}</strong>
+            <div className="muted">{me.email}</div>
+          </div>
+        </div>
+        <dl className="facts">
+          <dt>Full name</dt><dd>{me.name}</dd>
+          <dt>Work email</dt><dd>{me.email}</dd>
+          <dt>Role</dt><dd><span className={me.role === 'admin' ? 'badge active' : 'badge'}>{me.role === 'admin' ? 'Admin' : 'Member'}</span></dd>
+          <dt>Password</dt><dd><button type="button" className="link" onClick={onChangePassword}>Change password</button></dd>
+        </dl>
+        <div className="dialog-actions">
+          <span className="spacer" />
+          <button type="button" onClick={onClose}>Close</button>
+          <button type="button" className="primary" onClick={onChangePassword}>Change password</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Shell({ me }: { me: User }) {
   const qc = useQueryClient()
   const [mainTab, setMainTab] = useState<Tab>('overview')
@@ -126,6 +159,7 @@ function Shell({ me }: { me: User }) {
     go('')
   }
   const [changingPassword, setChangingPassword] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   // The left menu can shrink to icons. Remembered in this browser only.
   const [menuCollapsed, setMenuCollapsed] = useState(() => {
     try { return localStorage.getItem('cf_menu_collapsed') === '1' } catch { return false }
@@ -179,15 +213,19 @@ function Shell({ me }: { me: User }) {
         </nav>
         <div className="side-account">
           <div className="side-user">
-            <span className="avatar big" style={{ background: me.colour }}>{me.initials}</span>
-            <span className="who-name"><strong>{me.name}</strong><small>{me.role === 'admin' ? 'Admin' : 'Team member'}</small></span>
+            <button type="button" className="profile-btn" title="My profile" aria-label="My profile" onClick={() => setProfileOpen(true)}>
+              <span className="avatar big" style={{ background: me.colour }}>{me.initials}</span>
+              <span className="who-name"><strong>{me.name}</strong><small>{me.role === 'admin' ? 'Admin' : 'Team member'}</small></span>
+            </button>
+            <span className="side-actions">
+              <button type="button" className="side-btn" title="Sign out" aria-label="Sign out" disabled={logout.isPending} onClick={async () => {
+                if (await confirmDialog({ title: 'Sign out?', message: 'You will need to sign in again to continue.', confirmLabel: 'Sign out' })) logout.mutate()
+              }}><Icon name="logout" size={18} /></button>
+            </span>
           </div>
-          <button className="nav-item" title="Change password" onClick={() => setChangingPassword(true)}><span className="nav-icon"><Icon name="key" /></span><span className="nav-text">Change password</span></button>
-          <button className="nav-item" title="Sign out" disabled={logout.isPending} onClick={async () => {
-            if (await confirmDialog({ title: 'Sign out?', message: 'You will need to sign in again to continue.', confirmLabel: 'Sign out' })) logout.mutate()
-          }}><span className="nav-icon"><Icon name="logout" /></span><span className="nav-text">Sign out</span></button>
         </div>
       </aside>
+      {profileOpen && <ProfilePopup me={me} onClose={() => setProfileOpen(false)} onChangePassword={() => { setProfileOpen(false); setChangingPassword(true) }} />}
       <div className="content">
       <div className="topbar"><InboxBell me={me} onOpenMessages={() => setTab('messages')} /></div>
       <h1 className="page-title">{tab === 'overview' ? `Hello, ${me.name.split(' ')[0]}` : title}</h1>

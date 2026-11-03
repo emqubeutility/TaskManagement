@@ -7,7 +7,7 @@ import { shiftDateToMonth } from '../shared/dates'
 import { requireAuth, type AppEnv } from './auth'
 import { getDb, type DbLike, type Tx } from './db'
 import { canEditFlow, currentStep, transition, type Action } from './flow'
-import { activity, taskSteps, tasks, users, type Task, type User } from './schema'
+import { activity, postMentions, posts, taskSteps, tasks, users, type Task, type User } from './schema'
 
 const month = z.string().regex(/^\d{4}-\d{2}$/)
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -28,6 +28,16 @@ export type TaskInput = z.infer<typeof taskInput>
 
 const log = (db: DbLike, taskId: number, userId: number | null, action: string, detail = '') =>
   db.insert(activity).values({ taskId, userId, action, detail })
+
+/** Keeps a handover/close comment on the task's history and, when someone receives the task, in their inbox. */
+async function addComment(db: DbLike, taskId: number, from: number, to: number | null, kind: 'handover' | 'close', body: string | undefined) {
+  if (!body) return
+  await log(db, taskId, from, 'comment', body)
+  const [post] = await db.insert(posts).values({ taskId, authorId: from, kind, body }).returning({ id: posts.id })
+  if (to !== null) await db.insert(postMentions).values({ postId: post.id, userId: to })
+}
+
+const comment = z.string().trim().max(1000).optional()
 
 /** Tasks with their flow steps attached. */
 export async function loadTasks(db: DbLike, where?: SQL) {
@@ -204,10 +214,11 @@ taskRoutes.delete('/:id', async (c) => {
 // --- flow actions --------------------------------------------------------------
 
 for (const action of ['accept', 'start', 'close'] as Action[]) {
-  taskRoutes.post(`/:id/${action}`, zValidator('json', versioned), async (c) => {
+  taskRoutes.post(`/:id/${action}`, zValidator('json', versioned.extend({ comment })), async (c) => {
     const user = c.get('user')
     const id = idParam(c)
-    const updated = await mutate(id, c.req.valid('json').version, async (tx, task, steps) => {
+    const { version, comment: note } = c.req.valid('json')
+    const updated = await mutate(id, version, async (tx, task, steps) => {
       const result = transition(steps, action, user.id)
       if (!result.ok) throw new HTTPException(result.status, { message: result.error })
       const now = new Date()
@@ -216,14 +227,20 @@ for (const action of ['accept', 'start', 'close'] as Action[]) {
       }
       if (result.completed) await tx.update(tasks).set({ completedAt: now }).where(eq(tasks.id, task.id))
       await log(tx, id, user.id, action)
+      if (action === 'close') {
+        // The note goes to whoever receives the task next, or to the owner when the last step is closed.
+        const nextId = result.updates.find((u) => u.status === 'offered')?.id
+        const next = steps.find((s) => s.id === nextId)
+        await addComment(tx, id, user.id, next ? next.userId : task.ownerId, 'close', note)
+      }
     })
     return c.json(updated)
   })
 }
 
-taskRoutes.post('/:id/pass', zValidator('json', versioned.extend({ toUserId: z.number().int() })), async (c) => {
+taskRoutes.post('/:id/pass', zValidator('json', versioned.extend({ toUserId: z.number().int(), comment })), async (c) => {
   const user = c.get('user')
-  const { version, toUserId } = c.req.valid('json')
+  const { version, toUserId, comment: note } = c.req.valid('json')
   const id = idParam(c)
   const updated = await mutate(id, version, async (tx, _task, steps) => {
     const current = currentStep(steps)
@@ -235,6 +252,7 @@ taskRoutes.post('/:id/pass', zValidator('json', versioned.extend({ toUserId: z.n
       .set({ userId: toUserId, status: 'offered', acceptedAt: null, startedAt: null })
       .where(eq(taskSteps.id, current.id))
     await log(tx, id, user.id, 'passed', `to user ${toUserId}`)
+    await addComment(tx, id, user.id, toUserId, 'handover', note)
   })
   return c.json(updated)
 })

@@ -9,7 +9,7 @@ interface Toast { id: number; kind: ToastKind; message: string }
 
 type Modal =
   | { type: 'confirm'; title: string; message?: string; confirmLabel: string; danger: boolean; resolve: (ok: boolean) => void }
-  | { type: 'prompt'; title: string; label: string; initial: string; confirmLabel: string; resolve: (value: string | null) => void }
+  | { type: 'prompt'; title: string; message?: string; label: string; initial: string; confirmLabel: string; multiline: boolean; optional: boolean; resolve: (value: string | null) => void }
 
 interface State { toasts: Toast[]; modal: Modal | null }
 
@@ -34,15 +34,16 @@ export function confirmDialog(opts: { title: string; message?: string; confirmLa
   })
 }
 
-export function promptDialog(opts: { title: string; label: string; initial?: string; confirmLabel?: string }): Promise<string | null> {
+/** Resolves to the text (possibly empty when `optional`), or null if cancelled. */
+export function promptDialog(opts: { title: string; label: string; message?: string; initial?: string; confirmLabel?: string; multiline?: boolean; optional?: boolean }): Promise<string | null> {
   return new Promise((resolve) => {
-    set({ modal: { type: 'prompt', title: opts.title, label: opts.label, initial: opts.initial ?? '', confirmLabel: opts.confirmLabel ?? 'Save', resolve } })
+    set({ modal: { type: 'prompt', title: opts.title, message: opts.message, label: opts.label, initial: opts.initial ?? '', confirmLabel: opts.confirmLabel ?? 'Save', multiline: !!opts.multiline, optional: !!opts.optional, resolve } })
   })
 }
 
 function ModalView({ modal }: { modal: Modal }) {
   const [value, setValue] = useState(modal.type === 'prompt' ? modal.initial : '')
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
 
   const close = (result: boolean | string | null) => {
     set({ modal: null })
@@ -51,8 +52,11 @@ function ModalView({ modal }: { modal: Modal }) {
   }
   const cancel = () => close(modal.type === 'confirm' ? false : null)
 
+  // Select the starting text once, when the dialog opens. (Doing it on every render re-selected
+  // the whole text after each keystroke, so the next letter replaced everything typed so far.)
+  useEffect(() => { inputRef.current?.select() }, [])
+
   useEffect(() => {
-    inputRef.current?.select()
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); cancel() } }
     document.addEventListener('keydown', key, true)
     return () => document.removeEventListener('keydown', key, true)
@@ -61,16 +65,20 @@ function ModalView({ modal }: { modal: Modal }) {
   const submit = (e: FormEvent) => {
     e.preventDefault()
     if (modal.type === 'confirm') return close(true)
-    if (value.trim()) close(value.trim())
+    if (modal.optional || value.trim()) close(value.trim())
   }
 
   return (
     <div className="overlay modal-overlay" onMouseDown={(e) => e.target === e.currentTarget && cancel()}>
       <form className="dialog small-dialog" role="dialog" aria-modal="true" onSubmit={submit}>
         <h2>{modal.title}</h2>
-        {modal.type === 'confirm' && modal.message && <p className="muted modal-text">{modal.message}</p>}
+        {modal.message && <p className="muted modal-text">{modal.message}</p>}
         {modal.type === 'prompt' && (
-          <label>{modal.label}<input ref={inputRef} value={value} onChange={(e) => setValue(e.target.value)} autoFocus maxLength={100} /></label>
+          <label>{modal.label}
+            {modal.multiline
+              ? <textarea ref={inputRef} value={value} onChange={(e) => setValue(e.target.value)} autoFocus rows={4} maxLength={1000} />
+              : <input ref={inputRef} value={value} onChange={(e) => setValue(e.target.value)} autoFocus maxLength={100} />}
+          </label>
         )}
         <div className="dialog-actions">
           <span className="spacer" />

@@ -5,6 +5,7 @@ import { confirmDialog } from '../dialogs'
 import { useClients, useTemplates, useTypes, useUsers } from '../hooks'
 import { STATUS_LABEL, type Task, type User } from '../types'
 import { FlowEditor, PersonName } from './FlowEditor'
+import { TaskThread } from './Messages'
 import { DatePicker, MonthPicker } from './Pickers'
 
 interface ActivityRow { id: number; action: string; detail: string; createdAt: string; userId: number | null }
@@ -126,6 +127,13 @@ export function TaskDialog({ task, me, defaultMonth, onClose }: { task?: Task; m
           <FlowEditor value={flow} onChange={setFlow} locked={doneIds} disabled={!canEditFlow} />
           {!canEditFlow && <p className="muted">Only the owner or an admin can change the flow.</p>}
         </fieldset>
+
+        {task && (
+          <fieldset>
+            <legend>Messages about this task</legend>
+            <TaskThread taskId={task.id} me={me} />
+          </fieldset>
+        )}
 
         {task && (
           <details>

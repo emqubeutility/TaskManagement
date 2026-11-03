@@ -3,7 +3,7 @@ import { eq, ne } from 'drizzle-orm'
 import * as XLSX from 'xlsx'
 import { makeInitials, pickColour } from './auth'
 import { getDb } from './db'
-import { activity, clients, loginAttempts, sessions, taskSteps, taskTypes, tasks, templateSteps, templates, users } from './schema'
+import { activity, clients, loginAttempts, posts, sessions, taskSteps, taskTypes, tasks, templateSteps, templates, users } from './schema'
 
 // Replaces ALL data except the admin account with the contents of "WebDigital Tasks.xlsx".
 //   npm run db:load-webdigital -- --dry-run   (read the sheet and print what would be created; touches nothing)
@@ -91,6 +91,7 @@ async function main() {
     if (!admin) throw new Error(`Admin ${adminEmail} not found. Run npm run db:seed first.`)
 
     // Wipe everything except the admin (children first).
+    await tx.delete(posts) // messages (and their tags) go with the old people and tasks
     await tx.delete(activity)
     await tx.delete(taskSteps)
     await tx.delete(tasks)

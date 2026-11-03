@@ -7,6 +7,8 @@ import { Icon, type IconName } from './icons'
 import { go, sectionOf, useHash, type AdminSection } from './hash'
 import { ClientsView, TypesView, UsersView } from './views/Admin'
 import { Board } from './views/Board'
+import { InboxBell } from './views/Inbox'
+import { MessagesView } from './views/MessagesPage'
 import { Overview } from './views/Overview'
 import { FilterBar } from './views/FilterBar'
 import { ImportView } from './views/Import'
@@ -14,7 +16,7 @@ import { ListView, Tracker } from './views/Tables'
 import { TemplatesView } from './views/Templates'
 import type { Filters, User } from './types'
 
-type Tab = 'overview' | 'board' | 'tracker' | 'list' | 'templates' | 'import' | 'admin' | 'clients' | 'types'
+type Tab = 'overview' | 'board' | 'tracker' | 'list' | 'messages' | 'templates' | 'import' | 'admin' | 'clients' | 'types'
 
 const SECTION_TAB: Record<AdminSection, Tab> = { users: 'admin', clients: 'clients', types: 'types' }
 
@@ -23,6 +25,7 @@ const SUBTITLE: Record<Tab, string> = {
   board: 'Every task, in the column of the person who has it now.',
   tracker: 'A grid of every task and where each person is in its flow.',
   list: 'All tasks as a searchable list.',
+  messages: 'Team messages, tagged with the task and the people they are about.',
   templates: 'Reusable flows: the same people in the same order.',
   import: 'Bring tasks in from Excel, or copy a whole month forward.',
   admin: 'Add people, reset passwords and choose who is an admin.',
@@ -123,6 +126,15 @@ function Shell({ me }: { me: User }) {
     go('')
   }
   const [changingPassword, setChangingPassword] = useState(false)
+  // The left menu can shrink to icons. Remembered in this browser only.
+  const [menuCollapsed, setMenuCollapsed] = useState(() => {
+    try { return localStorage.getItem('cf_menu_collapsed') === '1' } catch { return false }
+  })
+  const toggleMenu = () => {
+    const next = !menuCollapsed
+    setMenuCollapsed(next)
+    try { localStorage.setItem('cf_menu_collapsed', next ? '1' : '0') } catch { /* storage unavailable: it just won't be remembered */ }
+  }
   const [filters, setFilters] = useState<Filters>({ month: dubaiMonth(), owner: '', client: '', type: '' })
   const logout = useMutation({
     mutationFn: () => api('/auth/logout', { method: 'POST', body: {} }),
@@ -138,7 +150,7 @@ function Shell({ me }: { me: User }) {
 
   const tabs: [Tab, string, IconName][] = [
     ['overview', 'Overview', 'home'], ['board', 'Board', 'board'], ['tracker', 'Tracker', 'table'], ['list', 'List', 'list'],
-    ['templates', 'Templates', 'layers'], ['import', 'Import / Clone', 'upload'],
+    ['messages', 'Messages', 'message'], ['templates', 'Templates', 'layers'], ['import', 'Import / Clone', 'upload'],
   ]
   if (me.role === 'admin') tabs.push(['admin', 'Admin / Users', 'users'], ['clients', 'Clients', 'briefcase'], ['types', 'Task types', 'tag'])
   const filtered = tab === 'board' || tab === 'tracker' || tab === 'list'
@@ -147,15 +159,20 @@ function Shell({ me }: { me: User }) {
   if (changingPassword) return <ChangePassword user={me} onClose={() => setChangingPassword(false)} />
 
   return (
-    <div className="shell">
+    <div className={menuCollapsed ? 'shell menu-collapsed' : 'shell'}>
       <aside className="sidebar">
-        <Brand />
+        <div className="side-top">
+          {!menuCollapsed && <Brand />}
+          <button type="button" className="menu-toggle" onClick={toggleMenu} aria-label={menuCollapsed ? 'Expand menu' : 'Collapse menu'} title={menuCollapsed ? 'Expand menu' : 'Collapse menu'}>
+            <Icon name="panel" size={18} />
+          </button>
+        </div>
         <nav>
           {tabs.map(([k, label, icon]) => (
             <Fragment key={k}>
               {k === 'admin' && <span className="nav-label">Manage</span>}
-              <button className={tab === k ? 'nav-item active' : 'nav-item'} onClick={() => setTab(k)}>
-                <span className="nav-icon"><Icon name={icon} /></span>{label}
+              <button className={tab === k ? 'nav-item active' : 'nav-item'} onClick={() => setTab(k)} title={label}>
+                <span className="nav-icon"><Icon name={icon} /></span><span className="nav-text">{label}</span>
               </button>
             </Fragment>
           ))}
@@ -165,13 +182,14 @@ function Shell({ me }: { me: User }) {
             <span className="avatar big" style={{ background: me.colour }}>{me.initials}</span>
             <span className="who-name"><strong>{me.name}</strong><small>{me.role === 'admin' ? 'Admin' : 'Team member'}</small></span>
           </div>
-          <button className="nav-item" onClick={() => setChangingPassword(true)}><span className="nav-icon"><Icon name="key" /></span>Change password</button>
-          <button className="nav-item" disabled={logout.isPending} onClick={async () => {
+          <button className="nav-item" title="Change password" onClick={() => setChangingPassword(true)}><span className="nav-icon"><Icon name="key" /></span><span className="nav-text">Change password</span></button>
+          <button className="nav-item" title="Sign out" disabled={logout.isPending} onClick={async () => {
             if (await confirmDialog({ title: 'Sign out?', message: 'You will need to sign in again to continue.', confirmLabel: 'Sign out' })) logout.mutate()
-          }}><span className="nav-icon"><Icon name="logout" /></span>Sign out</button>
+          }}><span className="nav-icon"><Icon name="logout" /></span><span className="nav-text">Sign out</span></button>
         </div>
       </aside>
       <div className="content">
+      <div className="topbar"><InboxBell me={me} onOpenMessages={() => setTab('messages')} /></div>
       <h1 className="page-title">{tab === 'overview' ? `Hello, ${me.name.split(' ')[0]}` : title}</h1>
       <p className="page-sub">{SUBTITLE[tab]}</p>
       {filtered && <FilterBar filters={filters} onChange={setFilters} />}
@@ -180,6 +198,7 @@ function Shell({ me }: { me: User }) {
         {tab === 'board' && <Board me={me} filters={filters} />}
         {tab === 'tracker' && <Tracker me={me} filters={filters} />}
         {tab === 'list' && <ListView me={me} filters={filters} />}
+        {tab === 'messages' && <MessagesView me={me} />}
         {tab === 'templates' && <TemplatesView me={me} />}
         {tab === 'import' && <ImportView />}
         {tab === 'admin' && me.role === 'admin' && <UsersView me={me} />}

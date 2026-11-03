@@ -44,6 +44,19 @@ export interface Task {
 
 export interface Template { id: number; name: string; createdBy: number | null; userIds: number[] }
 
+/** A message in the team feed: visible to everyone, optionally tagged with a task and with people. */
+export interface Post {
+  id: number
+  taskId: number | null
+  taskTitle: string | null
+  authorId: number
+  kind: 'note' | 'handover' | 'close'
+  body: string
+  createdAt: string
+  mentions: { userId: number; readAt: string | null }[]
+}
+export interface Feed { unread: number; items: Post[] }
+
 export interface Filters { month: string; owner: string; client: string; type: string }
 
 export const STATUS_LABEL: Record<StepStatus, string> = {

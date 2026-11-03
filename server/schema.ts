@@ -1,5 +1,5 @@
 import {
-  pgTable, pgEnum, serial, text, integer, boolean, timestamp, date, index,
+  pgTable, pgEnum, serial, text, integer, boolean, timestamp, date, index, primaryKey,
 } from 'drizzle-orm/pg-core'
 
 export const roleEnum = pgEnum('role', ['admin', 'member'])
@@ -93,6 +93,24 @@ export const activity = pgTable('activity', {
   detail: text('detail').notNull().default(''),
   createdAt: ts('created_at').notNull().defaultNow(),
 }, (t) => [index('activity_task_idx').on(t.taskId)])
+
+// The team's message feed. Every post is visible to everyone; it may be tagged with a task and with people.
+// kind: 'note' (written by hand), 'handover' or 'close' (the optional comment on those actions).
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  taskId: integer('task_id').references(() => tasks.id, { onDelete: 'cascade' }),
+  authorId: integer('author_id').notNull().references(() => users.id),
+  kind: text('kind').notNull().default('note'),
+  body: text('body').notNull(),
+  createdAt: ts('created_at').notNull().defaultNow(),
+}, (t) => [index('posts_task_idx').on(t.taskId), index('posts_created_idx').on(t.createdAt)])
+
+// A tagged person. readAt null = they have not marked it read yet; that is what the bell counts.
+export const postMentions = pgTable('post_mentions', {
+  postId: integer('post_id').notNull().references(() => posts.id, { onDelete: 'cascade' }),
+  userId: integer('user_id').notNull().references(() => users.id),
+  readAt: ts('read_at'),
+}, (t) => [primaryKey({ columns: [t.postId, t.userId] }), index('post_mentions_user_idx').on(t.userId, t.readAt)])
 
 export type User = typeof users.$inferSelect
 export type Task = typeof tasks.$inferSelect

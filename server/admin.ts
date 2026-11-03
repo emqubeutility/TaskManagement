@@ -1,12 +1,12 @@
 import { zValidator } from '@hono/zod-validator'
 import bcrypt from 'bcryptjs'
-import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm'
+import { asc, eq, inArray, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { z } from 'zod'
 import { createSession, destroySession, makeInitials, pickColour, publicUser, requireAdmin, requireAuth, type AppEnv } from './auth'
 import { getDb } from './db'
-import { clients, loginAttempts, sessions, taskTypes, templateSteps, templates, users } from './schema'
+import { clients, sessions, taskTypes, templateSteps, templates, users } from './schema'
 
 const tempPassword = () => {
   const p = process.env.TEMP_PASSWORD
@@ -22,37 +22,16 @@ const idParam = (id: string) => {
 
 // --- auth ----------------------------------------------------------------------
 
-const MAX_FAILURES = 5
-const WINDOW_MINUTES = 15
-
 export const authRoutes = new Hono<AppEnv>()
 
 authRoutes.post('/login', zValidator('json', z.object({ email: z.string().email(), password: z.string().min(1) })), async (c) => {
   const db = getDb()
   const email = c.req.valid('json').email.toLowerCase()
   const { password } = c.req.valid('json')
-  const ip = c.req.header('x-forwarded-for')?.split(',')[0].trim() ?? 'local'
-  const key = `${email}|${ip}`
-
-  const [attempt] = await db.select().from(loginAttempts).where(
-    and(eq(loginAttempts.key, key), gt(loginAttempts.windowStart, new Date(Date.now() - WINDOW_MINUTES * 60_000))),
-  )
-  if (attempt && attempt.count >= MAX_FAILURES) {
-    throw new HTTPException(429, { message: `Too many failed attempts. Try again in ${WINDOW_MINUTES} minutes.` })
-  }
-
   const [user] = await db.select().from(users).where(eq(users.email, email))
   // Compare even for unknown emails so response time does not reveal which accounts exist.
   const ok = await bcrypt.compare(password, user?.passwordHash ?? '$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidi')
-  if (!user || !user.active || !ok) {
-    await db.execute(sql`
-      insert into login_attempts (key, count, window_start) values (${key}, 1, now())
-      on conflict (key) do update set
-        count = case when login_attempts.window_start > now() - interval '15 minutes' then login_attempts.count + 1 else 1 end,
-        window_start = case when login_attempts.window_start > now() - interval '15 minutes' then login_attempts.window_start else now() end`)
-    throw new HTTPException(401, { message: 'Wrong email or password' })
-  }
-  await db.delete(loginAttempts).where(eq(loginAttempts.key, key))
+  if (!user || !user.active || !ok) throw new HTTPException(401, { message: 'Wrong email or password' })
   await createSession(c, user.id)
   return c.json(publicUser(user))
 })

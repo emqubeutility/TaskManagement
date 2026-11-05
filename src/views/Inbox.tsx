@@ -1,16 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useInbox, useMessageActions, useUsers } from '../hooks'
 import { Icon } from '../icons'
 import type { Post, User } from '../types'
-import { when } from './Messages'
+import { Avatar } from './FlowEditor'
+import { clock, when } from './Chat'
 
-/** The bell at the top right: messages that tag me. Unread ones are highlighted and counted until I mark them read. */
-export function InboxBell({ me, onOpenMessages }: { me: User; onOpenMessages: () => void }) {
+const PREVIEW: Record<Post['kind'], string> = { note: '', handover: 'Handed over · ', close: 'Closed their step · ' }
+
+/** The bell at the top right: who has written to me, like a chat list. Click a person to open the chat with them. */
+export function InboxBell({ me, onOpenChat }: { me: User; onOpenChat: (personId?: number) => void }) {
   const inbox = useInbox().data
   const users = useUsers().data ?? []
   const [open, setOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
-  const { read, readAll } = useMessageActions()
+  const { readAll } = useMessageActions()
 
   useEffect(() => {
     if (!open) return
@@ -22,9 +25,21 @@ export function InboxBell({ me, onOpenMessages }: { me: User; onOpenMessages: ()
   }, [open])
 
   const unread = inbox?.unread ?? 0
-  const items = inbox?.items ?? []
-  const who = (m: Post) => (m.authorId === me.id ? 'You' : users.find((u) => u.id === m.authorId)?.name ?? 'Someone')
-  const isUnread = (m: Post) => m.mentions.some((x) => x.userId === me.id && !x.readAt)
+
+  // One row per person, newest conversation first. The feed is newest first, so the first post seen is the latest.
+  const chats = useMemo(() => {
+    const by = new Map<number, { last: Post; unread: number }>()
+    for (const p of inbox?.items ?? []) {
+      if (p.authorId === me.id) continue
+      const e = by.get(p.authorId)
+      const n = p.mentions.some((x) => x.userId === me.id && !x.readAt) ? 1 : 0
+      if (e) e.unread += n
+      else by.set(p.authorId, { last: p, unread: n })
+    }
+    return [...by.entries()]
+  }, [inbox, me.id])
+
+  const go = (id?: number) => { setOpen(false); onOpenChat(id) }
 
   return (
     <div className="inbox" ref={box}>
@@ -35,28 +50,30 @@ export function InboxBell({ me, onOpenMessages }: { me: User; onOpenMessages: ()
       {open && (
         <div className="inbox-panel" role="dialog" aria-label="Messages">
           <div className="inbox-head">
-            <strong>Tagged you</strong>
+            <strong>Messages</strong>
             <span className="muted">{unread ? `${unread} unread` : 'All read'}</span>
             <span className="spacer" />
             <button type="button" className="link" disabled={!unread || readAll.isPending} onClick={() => readAll.mutate()}>Mark all read</button>
           </div>
-          <ul>
-            {items.map((m) => (
-              <li key={m.id} className={isUnread(m) ? 'msg unread' : 'msg'}>
-                <button type="button" onClick={() => { if (isUnread(m)) read.mutate(m.id); setOpen(false); onOpenMessages() }}>
-                  <span className="msg-top">
-                    <strong>{who(m)}</strong>
-                    <span className="muted">{m.kind === 'close' ? 'closed their step' : m.kind === 'handover' ? 'handed over' : 'tagged you'}</span>
-                    <span className="muted msg-time">{when(m.createdAt)}</span>
-                  </span>
-                  {m.taskTitle && <span className="msg-task">{m.taskTitle}</span>}
-                  <span className="msg-body">{m.body}</span>
-                </button>
-              </li>
-            ))}
-            {!items.length && <li className="muted empty">Nothing has tagged you yet</li>}
+          <ul className="chat-rows">
+            {chats.map(([id, { last, unread: n }]) => {
+              const name = users.find((u) => u.id === id)?.name ?? 'Someone'
+              return (
+                <li key={id}>
+                  <button type="button" className={n ? 'chat-row-btn unread' : 'chat-row-btn'} onClick={() => go(id)}>
+                    <Avatar userId={id} size={40} />
+                    <span className="chat-row-main">
+                      <span className="chat-row-top"><strong>{name}</strong><span className="muted chat-row-time" title={when(last.createdAt)}>{clock(last.createdAt)}</span></span>
+                      <span className="chat-row-preview">{PREVIEW[last.kind]}{last.taskTitle ? <em>{last.taskTitle}: </em> : null}{last.body}</span>
+                    </span>
+                    {n > 0 && <span className="count count-new">{n}</span>}
+                  </button>
+                </li>
+              )
+            })}
+            {!chats.length && <li className="muted empty">Nobody has written to you yet</li>}
           </ul>
-          <div className="inbox-foot"><button type="button" className="link" onClick={() => { setOpen(false); onOpenMessages() }}>Open all messages</button></div>
+          <div className="inbox-foot"><button type="button" className="link" onClick={() => go()}>Open Messages</button></div>
         </div>
       )}
     </div>

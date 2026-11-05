@@ -3,12 +3,28 @@ import { useState, type FormEvent } from 'react'
 import { api } from '../api'
 import { confirmDialog } from '../dialogs'
 import { useClients, useTemplates, useTypes, useUsers } from '../hooks'
-import { STATUS_LABEL, type Task, type User } from '../types'
-import { FlowEditor, PersonName } from './FlowEditor'
-import { TaskThread } from './Messages'
+import { isTaskOwner, STATUS_LABEL, totalMinutes, type Task, type User } from '../types'
+import { Icon } from '../icons'
+import { Avatar, FlowEditor, PersonName } from './FlowEditor'
+import { TaskThread, when } from './Chat'
 import { DatePicker, MonthPicker } from './Pickers'
 
 interface ActivityRow { id: number; action: string; detail: string; createdAt: string; userId: number | null }
+
+/** How an activity row reads: who did what, with the detail shown as a pill, a quote or plain text. */
+const ACTIVITY: Record<string, { verb: string; tone: string }> = {
+  created: { verb: 'created the task', tone: 'grey' },
+  imported: { verb: 'imported the task', tone: 'grey' },
+  accept: { verb: 'accepted the task', tone: 'blue' },
+  start: { verb: 'started working', tone: 'blue' },
+  close: { verb: 'closed their step', tone: 'green' },
+  'logged time': { verb: 'logged time', tone: 'amber' },
+  comment: { verb: 'left a note', tone: 'purple' },
+  passed: { verb: 'handed it over', tone: 'purple' },
+  'circled back': { verb: 'sent it for a circle back', tone: 'purple' },
+  edited: { verb: 'edited the task', tone: 'grey' },
+  'flow edited': { verb: 'changed the flow', tone: 'grey' },
+}
 
 export function TaskDialog({ task, me, defaultMonth, onClose }: { task?: Task; me: User; defaultMonth: string; onClose: () => void }) {
   const qc = useQueryClient()
@@ -17,7 +33,7 @@ export function TaskDialog({ task, me, defaultMonth, onClose }: { task?: Task; m
   const types = (useTypes().data ?? []).filter((t) => t.active || t.id === task?.typeId)
   const templates = useTemplates().data ?? []
 
-  const canEditFlow = !task || me.role === 'admin' || task.ownerId === me.id
+  const canEditFlow = !task || me.role === 'admin' || isTaskOwner(task, me.id)
   const doneIds = task?.steps.filter((s) => s.status === 'done').map((s) => s.userId) ?? []
   const openIds = task?.steps.filter((s) => s.status !== 'done').map((s) => s.userId) ?? []
 
@@ -32,7 +48,13 @@ export function TaskDialog({ task, me, defaultMonth, onClose }: { task?: Task; m
     notes: task?.notes ?? '',
     ownerId: String(task?.ownerId ?? me.id),
   })
-  const [flow, setFlow] = useState<number[]>(openIds)
+  const [flow, setFlowState] = useState<number[]>(task ? openIds : [me.id]) // a new task starts with its owner as the first person
+  // On a new task the owner is the first person in the flow, until an admin picks someone else by hand.
+  const [ownerPicked, setOwnerPicked] = useState(false)
+  const setFlow = (next: number[]) => {
+    setFlowState(next)
+    if (!task && me.role === 'admin' && !ownerPicked && next.length) setForm((f) => ({ ...f, ownerId: String(next[0]) }))
+  }
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }))
 
@@ -101,7 +123,7 @@ export function TaskDialog({ task, me, defaultMonth, onClose }: { task?: Task; m
           <label>Media<input value={form.media} onChange={set('media')} placeholder="Link or file name" /></label>
           <label>Owner
             {me.role === 'admin' ? (
-              <select value={form.ownerId} onChange={set('ownerId')}>
+              <select value={form.ownerId} onChange={(e) => { setOwnerPicked(true); set('ownerId')(e) }}>
                 {users.filter((u) => u.active).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             ) : (
@@ -124,9 +146,46 @@ export function TaskDialog({ task, me, defaultMonth, onClose }: { task?: Task; m
               {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           )}
-          <FlowEditor value={flow} onChange={setFlow} locked={doneIds} disabled={!canEditFlow} />
-          {!canEditFlow && <p className="muted">Only the owner or an admin can change the flow.</p>}
+          <FlowEditor value={flow} onChange={setFlow} locked={doneIds} disabled={!canEditFlow} allowRepeat />
+          {!canEditFlow && <p className="muted">Only an owner or an admin can change the flow.</p>}
         </fieldset>
+
+        {task && task.timeLogs.length > 0 && (
+          <section className="panel time-panel">
+            <div className="panel-head">
+              <h3>Time spent</h3>
+              <span className="time-total">{totalMinutes(task)} <small>min</small></span>
+            </div>
+            <div className="time-people">
+              {[...task.timeLogs.reduce((m, l) => m.set(l.userId, (m.get(l.userId) ?? 0) + l.minutes), new Map<number, number>())].map(([id, mins]) => (
+                <span key={id} className="time-person"><Avatar userId={id} size={22} /><PersonName id={id} /><strong>{mins} min</strong></span>
+              ))}
+            </div>
+            <table className="time-table">
+              <thead>
+                <tr><th>Date</th><th>Person</th><th>Step</th><th className="num">Minutes</th><th>Note</th></tr>
+              </thead>
+              <tbody>
+                {[...task.timeLogs].reverse().map((l) => {
+                  const ordered = [...task.steps].sort((a, b) => a.position - b.position)
+                  const at = ordered.findIndex((s) => s.id === l.stepId)
+                  return (
+                    <tr key={l.id}>
+                      <td className="muted nowrap">{when(l.createdAt)}</td>
+                      <td><span className="time-who"><Avatar userId={l.userId} size={22} /><PersonName id={l.userId} /></span></td>
+                      <td className="muted nowrap">{at >= 0 ? `Step ${at + 1}` : '–'}</td>
+                      <td className="num"><span className="pill">{l.minutes} min</span></td>
+                      <td className="time-note">{l.note || <span className="muted">–</span>}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              <tfoot>
+                <tr><td colSpan={3}>Total</td><td className="num"><strong>{totalMinutes(task)} min</strong></td><td /></tr>
+              </tfoot>
+            </table>
+          </section>
+        )}
 
         {task && (
           <fieldset>
@@ -136,17 +195,37 @@ export function TaskDialog({ task, me, defaultMonth, onClose }: { task?: Task; m
         )}
 
         {task && (
-          <details>
-            <summary>History: who did what ({activity.data?.length ?? 0})</summary>
-            <ul className="history">
-              {activity.data?.map((a) => (
-                <li key={a.id}>
-                  <span className="muted">{new Date(a.createdAt).toLocaleString('en-GB', { timeZone: 'Asia/Dubai' })}</span>{' '}
-                  {a.userId ? <PersonName id={a.userId} /> : 'System'} — {a.action}{a.detail ? ` (${a.detail})` : ''}
-                </li>
+          <details className="panel history-panel">
+            <summary>History <span className="count">{activity.data?.length ?? 0}</span></summary>
+            <ol className="timeline">
+              {activity.data?.map((a) => {
+                const kind = ACTIVITY[a.action] ?? { verb: a.action, tone: 'grey' }
+                const to = a.action === 'passed' || a.action === 'circled back' ? users.find((u) => u.id === Number(/user (\d+)/.exec(a.detail)?.[1]))?.name : undefined
+                return (
+                  <li key={a.id} className={`tl-${kind.tone}`}>
+                    <span className="tl-dot" />
+                    <div className="tl-body">
+                      <span>
+                        <strong>{a.userId ? <PersonName id={a.userId} /> : 'System'}</strong> {kind.verb}
+                        {to && <> to <strong>{to}</strong></>}
+                        {(a.action === 'close' || a.action === 'logged time') && a.detail && <> <span className="pill">{a.detail}</span></>}
+                        {(a.action === 'edited' || a.action === 'imported') && a.detail && <span className="muted"> · {a.detail}</span>}
+                      </span>
+                      {a.action === 'comment' && a.detail && <q className="tl-quote">{a.detail}</q>}
+                    </div>
+                    <span className="muted when">{when(a.createdAt)}</span>
+                  </li>
+                )
+              })}
+            </ol>
+            <div className="step-chain" aria-label="Where the task is in its flow">
+              {[...task.steps].sort((a, b) => a.position - b.position).map((s, i) => (
+                <span key={s.id} className="chain-item">
+                  {i > 0 && <Icon name="arrow-right" size={14} className="chain-arrow" />}
+                  <Avatar userId={s.userId} size={22} /><PersonName id={s.userId} /> <span className={`badge ${s.status}`}>{STATUS_LABEL[s.status]}</span>
+                </span>
               ))}
-            </ul>
-            <p className="muted">Steps: {task.steps.map((s) => STATUS_LABEL[s.status]).join(' → ') || 'none'}</p>
+            </div>
           </details>
         )}
 

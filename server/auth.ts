@@ -15,16 +15,17 @@ const isProd = () => process.env.NODE_ENV === 'production' || !!process.env.VERC
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex')
 
-export async function createSession(c: Context, userId: number) {
+/** With `remember` off the cookie ends when the browser closes (and the session lapses after a day anyway). */
+export async function createSession(c: Context, userId: number, remember = true) {
   const token = randomBytes(32).toString('base64url')
-  const expiresAt = new Date(Date.now() + SESSION_DAYS * 86_400_000)
+  const expiresAt = new Date(Date.now() + (remember ? SESSION_DAYS : 1) * 86_400_000)
   await getDb().insert(sessions).values({ id: hashToken(token), userId, expiresAt })
   setCookie(c, COOKIE, token, {
     httpOnly: true,
     secure: isProd(),
     sameSite: 'Lax',
     path: '/',
-    expires: expiresAt,
+    ...(remember ? { expires: expiresAt } : {}),
   })
 }
 

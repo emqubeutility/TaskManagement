@@ -2,6 +2,8 @@ import {
   pgTable, pgEnum, serial, text, integer, boolean, timestamp, date, index, primaryKey,
 } from 'drizzle-orm/pg-core'
 
+import { sql } from 'drizzle-orm'
+
 export const roleEnum = pgEnum('role', ['admin', 'member'])
 export const stepStatusEnum = pgEnum('step_status', ['waiting', 'offered', 'todo', 'active', 'done'])
 
@@ -52,7 +54,8 @@ export const tasks = pgTable('tasks', {
   title: text('title').notNull(),
   description: text('description').notNull().default(''),
   notes: text('notes').notNull().default(''),
-  ownerId: integer('owner_id').notNull().references(() => users.id),
+  ownerId: integer('owner_id').notNull().references(() => users.id), // the first owner
+  ownerIds: integer('owner_ids').array().notNull().default(sql`'{}'::integer[]`), // every owner; they can all edit the task
   dueDate: date('due_date', { mode: 'string' }),
   media: text('media').notNull().default(''),
   priorityRank: integer('priority_rank').notNull().default(0),
@@ -70,7 +73,32 @@ export const taskSteps = pgTable('task_steps', {
   acceptedAt: ts('accepted_at'),
   startedAt: ts('started_at'),
   closedAt: ts('closed_at'),
+  minutes: integer('minutes'), // time spent on this step, set when it is closed
 }, (t) => [index('task_steps_task_idx').on(t.taskId)])
+
+// Time logged on a task: part-way through a step, and when it is closed. Kept with the person who logged it,
+// so it stays theirs even if the step is later handed to someone else.
+export const timeLogs = pgTable('time_logs', {
+  id: serial('id').primaryKey(),
+  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  stepId: integer('step_id').references(() => taskSteps.id, { onDelete: 'set null' }), // empty if the step was later replaced by a flow edit
+  userId: integer('user_id').notNull().references(() => users.id),
+  minutes: integer('minutes').notNull(),
+  note: text('note').notNull().default(''),
+  createdAt: ts('created_at').notNull().defaultNow(),
+}, (t) => [index('time_logs_task_idx').on(t.taskId)])
+
+// The weekly / daily plan: a person's step put in Today, Tomorrow, This week or Next week.
+// scope 'day' + date = that day; scope 'week' + date = the Monday of that week.
+export const planItems = pgTable('plan_items', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  stepId: integer('step_id').notNull().unique().references(() => taskSteps.id, { onDelete: 'cascade' }),
+  scope: text('scope').notNull(),
+  startDate: date('start_date', { mode: 'string' }).notNull(),
+  position: integer('position').notNull().default(0),
+}, (t) => [index('plan_items_user_idx').on(t.userId)])
 
 export const templates = pgTable('templates', {
   id: serial('id').primaryKey(),
@@ -102,6 +130,8 @@ export const posts = pgTable('posts', {
   authorId: integer('author_id').notNull().references(() => users.id),
   kind: text('kind').notNull().default('note'),
   body: text('body').notNull(),
+  // Written in a one-to-one chat: only the author and the people it tags can see it, never the team thread.
+  isPrivate: boolean('is_private').notNull().default(false),
   createdAt: ts('created_at').notNull().defaultNow(),
 }, (t) => [index('posts_task_idx').on(t.taskId), index('posts_created_idx').on(t.createdAt)])
 

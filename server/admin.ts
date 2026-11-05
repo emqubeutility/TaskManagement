@@ -24,7 +24,7 @@ const idParam = (id: string) => {
 
 export const authRoutes = new Hono<AppEnv>()
 
-authRoutes.post('/login', zValidator('json', z.object({ email: z.string().email(), password: z.string().min(1) })), async (c) => {
+authRoutes.post('/login', zValidator('json', z.object({ email: z.string().email(), password: z.string().min(1), remember: z.boolean().optional() })), async (c) => {
   const db = getDb()
   const email = c.req.valid('json').email.toLowerCase()
   const { password } = c.req.valid('json')
@@ -32,7 +32,7 @@ authRoutes.post('/login', zValidator('json', z.object({ email: z.string().email(
   // Compare even for unknown emails so response time does not reveal which accounts exist.
   const ok = await bcrypt.compare(password, user?.passwordHash ?? '$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidi')
   if (!user || !user.active || !ok) throw new HTTPException(401, { message: 'Wrong email or password' })
-  await createSession(c, user.id)
+  await createSession(c, user.id, c.req.valid('json').remember !== false)
   return c.json(publicUser(user))
 })
 

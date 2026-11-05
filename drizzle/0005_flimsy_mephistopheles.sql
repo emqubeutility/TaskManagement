@@ -1,0 +1,1 @@
+ALTER TABLE "task_steps" ADD COLUMN "minutes" integer;

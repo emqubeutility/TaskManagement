@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import { dubaiMonth } from '../shared/dates'
 import { api, ApiError } from './api'
@@ -8,24 +8,26 @@ import { go, sectionOf, useHash, type AdminSection } from './hash'
 import { ClientsView, TypesView, UsersView } from './views/Admin'
 import { Board } from './views/Board'
 import { InboxBell } from './views/Inbox'
-import { MessagesView } from './views/MessagesPage'
+import { MessagesView, type Convo } from './views/MessagesPage'
 import { Overview } from './views/Overview'
+import { PlanBoard } from './views/Plan'
 import { FilterBar } from './views/FilterBar'
 import { ImportView } from './views/Import'
 import { ListView, Tracker } from './views/Tables'
 import { TemplatesView } from './views/Templates'
 import type { Filters, User } from './types'
 
-type Tab = 'overview' | 'board' | 'tracker' | 'list' | 'messages' | 'templates' | 'import' | 'admin' | 'clients' | 'types'
+type Tab = 'overview' | 'board' | 'plan' | 'tracker' | 'list' | 'messages' | 'templates' | 'import' | 'admin' | 'clients' | 'types'
 
 const SECTION_TAB: Record<AdminSection, Tab> = { users: 'admin', clients: 'clients', types: 'types' }
 
 const SUBTITLE: Record<Tab, string> = {
   overview: 'What needs you today, what is late, and how busy the team is.',
   board: 'Every task, in the column of the person who has it now.',
+  plan: 'Plan your steps for today, tomorrow, this week and next week.',
   tracker: 'A grid of every task and where each person is in its flow.',
   list: 'All tasks as a searchable list.',
-  messages: 'Team messages, tagged with the task and the people they are about.',
+  messages: 'Chat with the team or one person. Tag a task to link a message to it.',
   templates: 'Reusable flows: the same people in the same order.',
   import: 'Bring tasks in from Excel, or copy a whole month forward.',
   admin: 'Add people, reset passwords and choose who is an admin.',
@@ -33,11 +35,24 @@ const SUBTITLE: Record<Tab, string> = {
   types: 'The kinds of content a task can be, such as Reel or Post.',
 }
 
+function LoginArt() {
+  // Soft green shapes in the bottom-left corner, behind the page.
+  return (
+    <svg className="login-art" viewBox="0 0 330 260" aria-hidden="true">
+      <circle cx="70" cy="250" r="120" fill="#cdeed8" />
+      <circle cx="40" cy="270" r="110" fill="#3fbf6c" />
+      <path d="M-4 168c8-26 24-40 44-46-2 26-12 44-34 54z" fill="#bfe6cc" />
+      <path d="M-8 196c2-20 12-34 28-40 0 20-8 34-22 44z" fill="#8fd3a8" />
+    </svg>
+  )
+}
+
 function Login() {
   const qc = useQueryClient()
   const [error, setError] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const login = useMutation({
-    mutationFn: (v: { email: string; password: string }) => api<User>('/auth/login', { body: v }),
+    mutationFn: (v: { email: string; password: string; remember: boolean }) => api<User>('/auth/login', { body: v }),
     onSuccess: (u) => qc.setQueryData(['me'], u),
     onError: (e) => setError(e.message),
   })
@@ -45,14 +60,20 @@ function Login() {
     e.preventDefault()
     const f = new FormData(e.currentTarget)
     setError('')
-    login.mutate({ email: String(f.get('email')), password: String(f.get('password')) })
+    login.mutate({ email: String(f.get('email')), password: String(f.get('password')), remember: f.get('remember') === 'on' })
   }
+  const forgot = () => confirmDialog({
+    title: 'Forgot your password?',
+    message: 'Ask an admin to reset it for you (Admin / Users, then Reset password). You will get a temporary password and choose a new one when you sign in.',
+    confirmLabel: 'Got it',
+  })
   return (
     <div className="login-page">
+      <LoginArt />
       <section className="login-hero">
         <Brand />
         <h1>Plan. Track. Deliver.<br /><span>Together.</span></h1>
-        <p>Run every piece of content from idea to posting. Each task moves through your team, one accept, start and close at a time.</p>
+        <p>Manage your projects, track progress, collaborate with your team and achieve your goals — all in one place.</p>
         <div className="hero-points">
           {([['checks', 'Organize', 'Your work'], ['users', 'Collaborate', 'With your team'], ['chart', 'Track', 'Progress'], ['target', 'Achieve', 'Your goals']] as const).map(([i, a, b]) => (
             <div key={a}><span className="hero-icon"><Icon name={i} size={22} /></span><strong>{a}</strong><small>{b}</small></div>
@@ -62,8 +83,22 @@ function Login() {
       <form className="login-card" onSubmit={submit}>
         <h2>Welcome back</h2>
         <p className="muted">Sign in to your account</p>
-        <label>Email address<input name="email" type="email" autoComplete="username" required autoFocus /></label>
-        <label>Password<input name="password" type="password" autoComplete="current-password" required /></label>
+        <label>Email address
+          <span className="field"><Icon name="mail" size={18} /><input name="email" type="email" autoComplete="username" placeholder="you@emqube.com" required autoFocus /></span>
+        </label>
+        <label>Password
+          <span className="field">
+            <Icon name="lock" size={18} />
+            <input name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" placeholder="Enter your password" required />
+            <button type="button" className="field-btn" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(!showPassword)}>
+              <Icon name={showPassword ? 'eye-off' : 'eye'} size={18} />
+            </button>
+          </span>
+        </label>
+        <div className="login-row">
+          <label className="check"><input name="remember" type="checkbox" defaultChecked /> Remember me</label>
+          <button type="button" className="link forgot" onClick={forgot}>Forgot password?</button>
+        </div>
         {error && <p className="error">{error}</p>}
         <button className="primary big with-icon" disabled={login.isPending}>Sign in <Icon name="forward" /></button>
         <p className="secure"><Icon name="shield" size={16} /> Your data is secure with us</p>
@@ -146,6 +181,19 @@ function ProfilePopup({ me, onClose, onChangePassword }: { me: User; onClose: ()
   )
 }
 
+/** Reloads everything on screen now, instead of waiting for the next automatic refresh. */
+function RefreshButton() {
+  const qc = useQueryClient()
+  const busy = useIsFetching() > 0
+  return (
+    <button type="button" className="bell refresh" onClick={() => qc.invalidateQueries()} aria-label="Refresh" title="Refresh">
+      <Icon name="refresh" size={19} className={busy ? 'spin' : undefined} />
+    </button>
+  )
+}
+
+const ADMIN_TABS: Tab[] = ['admin', 'clients', 'types']
+
 function Shell({ me }: { me: User }) {
   const qc = useQueryClient()
   const [mainTab, setMainTab] = useState<Tab>('overview')
@@ -183,10 +231,17 @@ function Shell({ me }: { me: User }) {
   })
 
   const tabs: [Tab, string, IconName][] = [
-    ['overview', 'Overview', 'home'], ['board', 'Board', 'board'], ['tracker', 'Tracker', 'table'], ['list', 'List', 'list'],
+    ['overview', 'Overview', 'grid'], ['board', 'Board', 'board'], ['tracker', 'Tracker', 'table'], ['list', 'List', 'list'],
     ['messages', 'Messages', 'message'], ['templates', 'Templates', 'layers'], ['import', 'Import / Clone', 'upload'],
   ]
   if (me.role === 'admin') tabs.push(['admin', 'Admin / Users', 'users'], ['clients', 'Clients', 'briefcase'], ['types', 'Task types', 'tag'])
+  const [adminOpen, setAdminOpen] = useState(false)
+  // Which chat the Messages tab shows. The bell opens it on the person who wrote.
+  const [convo, setConvo] = useState<Convo>({ kind: 'team' })
+  const openChat = (personId?: number) => { setConvo(personId ? { kind: 'person', id: personId } : { kind: 'team' }); setTab('messages') }
+  const signOut = async () => {
+    if (await confirmDialog({ title: 'Sign out?', message: 'You will need to sign in again to continue.', confirmLabel: 'Sign out' })) logout.mutate()
+  }
   const filtered = tab === 'board' || tab === 'tracker' || tab === 'list'
   const title = tabs.find(([k]) => k === tab)![1]
 
@@ -202,41 +257,57 @@ function Shell({ me }: { me: User }) {
           </button>
         </div>
         <nav>
-          {tabs.map(([k, label, icon]) => (
-            <Fragment key={k}>
-              {k === 'admin' && <span className="nav-label">Manage</span>}
-              <button className={tab === k ? 'nav-item active' : 'nav-item'} onClick={() => setTab(k)} title={label}>
+          {tabs.filter(([k]) => !ADMIN_TABS.includes(k)).map(([k, label, icon]) => (
+            <button key={k} className={tab === k ? 'nav-item active' : 'nav-item'} onClick={() => setTab(k)} title={label}>
+              <span className="nav-icon"><Icon name={icon} /></span><span className="nav-text">{label}</span>
+            </button>
+          ))}
+          {me.role === 'admin' && (menuCollapsed ? (
+            tabs.filter(([k]) => ADMIN_TABS.includes(k)).map(([k, label, icon]) => (
+              <button key={k} className={tab === k ? 'nav-item active' : 'nav-item'} onClick={() => setTab(k)} title={label}>
                 <span className="nav-icon"><Icon name={icon} /></span><span className="nav-text">{label}</span>
               </button>
-            </Fragment>
+            ))
+          ) : (
+            <>
+              <button className={ADMIN_TABS.includes(tab) ? 'nav-item group-active' : 'nav-item'} aria-expanded={adminOpen || ADMIN_TABS.includes(tab)} onClick={() => setAdminOpen(!(adminOpen || ADMIN_TABS.includes(tab)))}>
+                <span className="nav-icon"><Icon name="sliders" /></span><span className="nav-text">Administration</span>
+                <Icon name="next" size={16} className={adminOpen || ADMIN_TABS.includes(tab) ? 'nav-chev open' : 'nav-chev'} />
+              </button>
+              {(adminOpen || ADMIN_TABS.includes(tab)) && tabs.filter(([k]) => ADMIN_TABS.includes(k)).map(([k, label, icon]) => (
+                <button key={k} className={tab === k ? 'nav-item sub active' : 'nav-item sub'} onClick={() => setTab(k)}>
+                  <span className="nav-icon"><Icon name={icon} size={16} /></span><span className="nav-text">{label}</span>
+                </button>
+              ))}
+            </>
           ))}
         </nav>
         <div className="side-account">
           <div className="side-user">
             <button type="button" className="profile-btn" title="My profile" aria-label="My profile" onClick={() => setProfileOpen(true)}>
-              <span className="avatar big" style={{ background: me.colour }}>{me.initials}</span>
-              <span className="who-name"><strong>{me.name}</strong><small>{me.role === 'admin' ? 'Admin' : 'Team member'}</small></span>
+              <span className="avatar big soft">{me.name.charAt(0).toUpperCase()}</span>
+              <span className="who-name"><strong>{me.name}</strong><small>{me.role === 'admin' ? 'Admin' : 'Employee'}</small></span>
             </button>
             <span className="side-actions">
-              <button type="button" className="side-btn" title="Sign out" aria-label="Sign out" disabled={logout.isPending} onClick={async () => {
-                if (await confirmDialog({ title: 'Sign out?', message: 'You will need to sign in again to continue.', confirmLabel: 'Sign out' })) logout.mutate()
-              }}><Icon name="logout" size={18} /></button>
+              <button type="button" className="side-btn" title="My profile" aria-label="My profile" onClick={() => setProfileOpen(true)}><Icon name="user" size={18} /></button>
+              <button type="button" className="side-btn signout" title="Sign out" aria-label="Sign out" disabled={logout.isPending} onClick={signOut}><Icon name="logout" size={18} /></button>
             </span>
           </div>
         </div>
       </aside>
       {profileOpen && <ProfilePopup me={me} onClose={() => setProfileOpen(false)} onChangePassword={() => { setProfileOpen(false); setChangingPassword(true) }} />}
-      <div className="content">
-      <div className="topbar"><InboxBell me={me} onOpenMessages={() => setTab('messages')} /></div>
-      <h1 className="page-title">{tab === 'overview' ? `Hello, ${me.name.split(' ')[0]}` : title}</h1>
-      <p className="page-sub">{SUBTITLE[tab]}</p>
+      <div className={tab === 'messages' ? 'content content-chat' : 'content'}>
+      {tab !== 'messages' && <div className="topbar">{(tab === 'board' || tab === 'plan') && <RefreshButton />}<InboxBell me={me} onOpenChat={openChat} /></div>}
+      {tab !== 'messages' && <h1 className="page-title">{tab === 'overview' ? `Hello, ${me.name.split(' ')[0]}` : title}</h1>}
+      {tab !== 'messages' && <p className="page-sub">{SUBTITLE[tab]}</p>}
       {filtered && <FilterBar filters={filters} onChange={setFilters} />}
       <main>
         {tab === 'overview' && <Overview me={me} goBoard={() => setTab('board')} />}
         {tab === 'board' && <Board me={me} filters={filters} />}
+        {tab === 'plan' && <PlanBoard owner={me} me={me} />}
         {tab === 'tracker' && <Tracker me={me} filters={filters} />}
         {tab === 'list' && <ListView me={me} filters={filters} />}
-        {tab === 'messages' && <MessagesView me={me} />}
+        {tab === 'messages' && <MessagesView me={me} convo={convo} onConvo={setConvo} />}
         {tab === 'templates' && <TemplatesView me={me} />}
         {tab === 'import' && <ImportView />}
         {tab === 'admin' && me.role === 'admin' && <UsersView me={me} />}

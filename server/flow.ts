@@ -54,6 +54,9 @@ export function transition(steps: StepLike[], action: Action, userId: number): T
   return { ok: true, updates, completed }
 }
 
-/** Can this user edit the flow of a task? Owner or admin only. */
-export const canEditFlow = (user: { id: number; role: string }, task: { ownerId: number }) =>
-  user.role === 'admin' || user.id === task.ownerId
+/** Everyone who owns a task. Older rows may only have the single ownerId. */
+export const ownersOf = (task: { ownerId: number; ownerIds?: number[] }) => (task.ownerIds?.length ? task.ownerIds : [task.ownerId])
+
+/** Can this user edit the task, its owners and its flow? An owner or an admin. */
+export const canEditFlow = (user: { id: number; role: string }, task: { ownerId: number; ownerIds?: number[] }) =>
+  user.role === 'admin' || ownersOf(task).includes(user.id)

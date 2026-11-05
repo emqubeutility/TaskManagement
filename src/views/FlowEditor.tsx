@@ -8,14 +8,18 @@ export function Avatar({ userId, size = 24 }: { userId: number; size?: number })
 }
 
 /** Ordered list of people. `locked` people (already finished) are shown but cannot change. */
-export function FlowEditor({ value, onChange, locked = [], disabled = false }: {
+export function FlowEditor({ value, onChange, locked = [], disabled = false, allowRepeat = false }: {
   value: number[]
   onChange: (ids: number[]) => void
   locked?: number[]
   disabled?: boolean
+  /** A person may come back later in the flow (not twice in a row). Off for templates, where each person appears once. */
+  allowRepeat?: boolean
 }) {
-  // A person can appear only once in a flow, so anyone already in it is not offered again.
-  const users = (useUsers().data ?? []).filter((u) => u.active && !value.includes(u.id) && !locked.includes(u.id))
+  const previous = value.length ? value[value.length - 1] : locked[locked.length - 1]
+  const users = (useUsers().data ?? []).filter((u) => u.active && (allowRepeat
+    ? u.id !== previous
+    : !value.includes(u.id) && !locked.includes(u.id)))
   const move = (i: number, d: -1 | 1) => {
     const next = [...value]
     ;[next[i], next[i + d]] = [next[i + d], next[i]]
@@ -43,7 +47,7 @@ export function FlowEditor({ value, onChange, locked = [], disabled = false }: {
       </ol>
       {!disabled && (
         <select value="" onChange={(e) => e.target.value && onChange([...value, Number(e.target.value)])}>
-          <option value="">{users.length ? '+ Add a person…' : 'Everyone is already added'}</option>
+          <option value="">{users.length ? '+ Add a person…' : allowRepeat ? 'Nobody else to add' : 'Everyone is already added'}</option>
           {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
       )}

@@ -51,4 +51,10 @@ describe('helpers', () => {
     expect(canEditFlow({ id: 2, role: 'member' }, { ownerId: 1 })).toBe(false)
     expect(canEditFlow({ id: 2, role: 'admin' }, { ownerId: 1 })).toBe(true)
   })
+  it('every listed owner can edit the flow', () => {
+    const task = { ownerId: 5, ownerIds: [5, 7] }
+    expect(canEditFlow({ id: 5, role: 'member' }, task)).toBe(true)
+    expect(canEditFlow({ id: 7, role: 'member' }, task)).toBe(true)
+    expect(canEditFlow({ id: 6, role: 'member' }, task)).toBe(false)
+  })
 })

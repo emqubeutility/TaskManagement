@@ -5,6 +5,7 @@ import { authRoutes, clientRoutes, templateRoutes, typeRoutes, userRoutes } from
 import { getDb } from './db'
 import { sessions, tasks } from './schema'
 import { messageRoutes } from './messages'
+import { planRoutes } from './plan'
 import { monthRoutes, taskRoutes } from './tasks'
 
 export const app = new Hono().basePath('/api')
@@ -18,6 +19,7 @@ app.route('/templates', templateRoutes)
 app.route('/tasks', taskRoutes)
 app.route('/months', monthRoutes)
 app.route('/messages', messageRoutes)
+app.route('/plan', planRoutes)
 
 // Daily Vercel Cron: completed tasks (with steps and history, via cascade) go a year after completion.
 app.get('/cron/cleanup', async (c) => {

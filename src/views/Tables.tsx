@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { dubaiToday } from '../../shared/dates'
 import { useClients, useTasks, useTypes, useUsers } from '../hooks'
-import { currentStep, STATUS_LABEL, type Filters, type Task, type User } from '../types'
+import { currentStep, ownersOf, STATUS_LABEL, totalMinutes, type Filters, type Task, type User } from '../types'
 import { Legend } from './Board'
 import { PersonName } from './FlowEditor'
 import { TaskDialog } from './TaskDialog'
@@ -32,7 +32,7 @@ export function Tracker({ me, filters }: { me: User; filters: Filters }) {
         <table className="tracker">
           <thead>
             <tr>
-              <th>Task</th><th>Client</th><th>Type</th><th>Owner</th><th>Due</th>
+              <th>Task</th><th>Client</th><th>Type</th><th>Owner</th><th>Due</th><th>Time</th>
               {users.map((u) => <th key={u.id} className="person" title={u.name}>{u.initials}</th>)}
             </tr>
           </thead>
@@ -42,15 +42,16 @@ export function Tracker({ me, filters }: { me: User; filters: Filters }) {
                 <td><button className="link" onClick={() => setEditing(t)}>{t.title}</button></td>
                 <td>{names.client(t.clientId)}</td>
                 <td>{names.type(t.typeId)}</td>
-                <td><PersonName id={t.ownerId} /></td>
+                <td>{ownersOf(t).map((id, i) => <Fragment key={id}>{i > 0 && ', '}<PersonName id={id} /></Fragment>)}</td>
                 <td className={t.dueDate && !t.completedAt && t.dueDate < today ? 'bad-text' : ''}>{t.dueDate ?? ''}</td>
+                <td title="Total minutes logged">{totalMinutes(t) ? `${totalMinutes(t)} min` : ''}</td>
                 {users.map((u) => {
                   const s = t.steps.find((x) => x.userId === u.id)
                   return <td key={u.id} className={s ? `cell ${s.status}` : 'cell'} title={s ? STATUS_LABEL[s.status] : ''}>{s ? STATUS_LABEL[s.status] : ''}</td>
                 })}
               </tr>
             ))}
-            {!tasks.length && <tr><td colSpan={5 + users.length} className="muted">No tasks match these filters</td></tr>}
+            {!tasks.length && <tr><td colSpan={6 + users.length} className="muted">No tasks match these filters</td></tr>}
           </tbody>
         </table>
       </div>

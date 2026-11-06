@@ -271,6 +271,49 @@ taskRoutes.delete('/:id', async (c) => {
   return c.json({ ok: true })
 })
 
+/**
+ * Accept, start or close the step a person holds, in one go (a chain), adding the closing time. Shared by the flow routes
+ * and the timesheet.
+ */
+export async function flowStep(taskId: number, version: number, userId: number, chain: Action[], opts: { minutes?: number; note?: string } = {}) {
+  const { minutes, note } = opts
+  return mutate(taskId, version, async (tx, task, steps) => {
+    const now = new Date()
+    const live = steps.map((s) => ({ ...s }))
+    const mine = currentStep(live)
+    let completed = false
+    let nextId: number | undefined
+    for (const a of chain) {
+      const result = transition(live, a, userId)
+      if (!result.ok) throw new HTTPException(result.status, { message: result.error })
+      for (const u of result.updates) {
+        const patch = { status: u.status, ...(u.stamp ? { [u.stamp]: now } : {}) }
+        await tx.update(taskSteps).set(patch).where(eq(taskSteps.id, u.id))
+        Object.assign(live.find((s) => s.id === u.id)!, patch)
+      }
+      if (result.completed) completed = true
+      if (a === 'close') nextId = result.updates.find((u) => u.status === 'offered')?.id
+    }
+    if (completed) await tx.update(tasks).set({ completedAt: now }).where(eq(tasks.id, task.id))
+
+    // Closing adds the last stretch of time: what the person confirmed, or the time since they last logged time (or started).
+    let spent: number | undefined
+    if (chain.includes('close') && mine) {
+      const [last] = await tx.select({ at: max(timeLogs.createdAt) }).from(timeLogs).where(eq(timeLogs.stepId, mine.id))
+      const since = last?.at ?? live.find((s) => s.id === mine.id)?.startedAt ?? now
+      spent = minutes ?? Math.max(0, Math.round((now.getTime() - since.getTime()) / 60_000))
+      if (spent > 0) await tx.insert(timeLogs).values({ taskId: task.id, stepId: mine.id, userId, minutes: spent })
+      await tx.update(taskSteps).set({ minutes: (mine.minutes ?? 0) + spent }).where(eq(taskSteps.id, mine.id))
+    }
+    for (const a of chain) await log(tx, taskId, userId, a, a === 'close' && spent !== undefined ? `${spent} min` : '')
+    if (chain.includes('close')) {
+      // The note goes to whoever receives the task next, or to the owner when the last step is closed.
+      const next = steps.find((s) => s.id === nextId)
+      await addComment(tx, taskId, userId, next ? next.userId : task.ownerId, 'close', note)
+    }
+  })
+}
+
 // --- flow actions --------------------------------------------------------------
 
 // Accepting can carry on into starting or closing, and starting into closing, in one go.
@@ -292,41 +335,7 @@ for (const action of ['accept', 'start', 'close'] as Action[]) {
       if (!more) throw new HTTPException(400, { message: `You cannot ${action} and then ${then}` })
       chain.push(...more)
     }
-    const updated = await mutate(id, version, async (tx, task, steps) => {
-      const now = new Date()
-      const live = steps.map((s) => ({ ...s }))
-      const mine = currentStep(live)
-      let completed = false
-      let nextId: number | undefined
-      for (const a of chain) {
-        const result = transition(live, a, user.id)
-        if (!result.ok) throw new HTTPException(result.status, { message: result.error })
-        for (const u of result.updates) {
-          const patch = { status: u.status, ...(u.stamp ? { [u.stamp]: now } : {}) }
-          await tx.update(taskSteps).set(patch).where(eq(taskSteps.id, u.id))
-          Object.assign(live.find((s) => s.id === u.id)!, patch)
-        }
-        if (result.completed) completed = true
-        if (a === 'close') nextId = result.updates.find((u) => u.status === 'offered')?.id
-      }
-      if (completed) await tx.update(tasks).set({ completedAt: now }).where(eq(tasks.id, task.id))
-
-      // Closing adds the last stretch of time: what the person confirmed, or the time since they last logged time (or started).
-      let spent: number | undefined
-      if (chain.includes('close') && mine) {
-        const [last] = await tx.select({ at: max(timeLogs.createdAt) }).from(timeLogs).where(eq(timeLogs.stepId, mine.id))
-        const since = last?.at ?? live.find((s) => s.id === mine.id)?.startedAt ?? now
-        spent = minutes ?? Math.max(0, Math.round((now.getTime() - since.getTime()) / 60_000))
-        if (spent > 0) await tx.insert(timeLogs).values({ taskId: task.id, stepId: mine.id, userId: user.id, minutes: spent })
-        await tx.update(taskSteps).set({ minutes: (mine.minutes ?? 0) + spent }).where(eq(taskSteps.id, mine.id))
-      }
-      for (const a of chain) await log(tx, id, user.id, a, a === 'close' && spent !== undefined ? `${spent} min` : '')
-      if (chain.includes('close')) {
-        // The note goes to whoever receives the task next, or to the owner when the last step is closed.
-        const next = steps.find((s) => s.id === nextId)
-        await addComment(tx, id, user.id, next ? next.userId : task.ownerId, 'close', note)
-      }
-    })
+    const updated = await flowStep(id, version, user.id, chain, { minutes, note })
     return c.json(updated)
   })
 }

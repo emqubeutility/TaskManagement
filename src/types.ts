@@ -51,6 +51,10 @@ export interface Task {
 /** A step in someone's plan: stored as a day or a week by date; see shared/plan.ts for the column it shows in. */
 export interface PlanItem { id: number; taskId: number; stepId: number; scope: 'day' | 'week'; startDate: string; position: number }
 
+/** One line of a person's timesheet: a task they work on, with a timer. */
+export type TimeEntryStatus = 'ready' | 'running' | 'paused' | 'ended' | 'abandoned'
+export interface TimeEntry { id: number; taskId: number; stepId: number; day: string; status: TimeEntryStatus; runStartedAt: string | null; minutes: number }
+
 export interface Template { id: number; name: string; createdBy: number | null; userIds: number[] }
 
 /** A message in the team feed: visible to everyone, optionally tagged with a task and with people. */

@@ -64,6 +64,20 @@
       "when": 1793883494442,
       "tag": "0008_dark_iron_patriot",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793970589357,
+      "tag": "0009_fixed_monster_badoon",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793972112729,
+      "tag": "0010_smiling_lockheed",
+      "breakpoints": true
     }
   ]
 }

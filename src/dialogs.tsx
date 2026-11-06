@@ -10,7 +10,7 @@ interface Toast { id: number; kind: ToastKind; message: string }
 type Modal =
   | { type: 'confirm'; title: string; message?: string; confirmLabel: string; danger: boolean; resolve: (ok: boolean) => void }
   | { type: 'choice'; title: string; subject?: string; message?: string; choices: Choice[]; resolve: (value: string | null) => void }
-  | { type: 'log'; title: string; subtitle?: string; logged: number; resolve: (value: { minutes: number; note: string } | null) => void }
+  | { type: 'log'; title: string; subtitle?: string; logged: number; initial?: number; resolve: (value: { minutes: number; note: string } | null) => void }
   | { type: 'close'; title: string; subtitle?: string; from?: Person; to?: Person | null; startedAt: Date; sinceLabel: string; logged: number; endedAt: Date; minutes: number; commentLabel: string; commentPlaceholder: string; confirmLabel: string; resolve: (value: { minutes: number; comment: string } | null) => void }
   | { type: 'prompt'; title: string; message?: string; label: string; initial: string; confirmLabel: string; multiline: boolean; optional: boolean; resolve: (value: string | null) => void }
 
@@ -55,8 +55,8 @@ export function choiceDialog(opts: { title: string; subject?: string; message?: 
 }
 
 /** Log some time part-way through a step. Resolves to the minutes and an optional note, or null if cancelled. */
-export function logTimeDialog(opts: { title: string; subtitle?: string; logged: number }): Promise<{ minutes: number; note: string } | null> {
-  return new Promise((resolve) => set({ modal: { type: 'log', title: opts.title, subtitle: opts.subtitle, logged: opts.logged, resolve } }))
+export function logTimeDialog(opts: { title: string; subtitle?: string; logged: number; initial?: number }): Promise<{ minutes: number; note: string } | null> {
+  return new Promise((resolve) => set({ modal: { type: 'log', title: opts.title, subtitle: opts.subtitle, logged: opts.logged, initial: opts.initial, resolve } }))
 }
 
 /** Shows when the step started (or time was last logged) and is being closed, with the minutes to confirm or correct. Resolves to the minutes and an optional comment, or null if cancelled. */
@@ -126,7 +126,7 @@ function Stepper({ value, onChange, min = 0 }: { value: string; onChange: (v: st
 }
 
 function LogView({ modal }: { modal: Extract<Modal, { type: 'log' }> }) {
-  const [minutes, setMinutes] = useState('30')
+  const [minutes, setMinutes] = useState(String(Math.max(1, modal.initial ?? 30)))
   const [note, setNote] = useState('')
   const valid = /^\d+$/.test(minutes) && Number(minutes) >= 1 && Number(minutes) <= 100_000
   const n = valid ? Number(minutes) : 0

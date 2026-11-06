@@ -1,5 +1,5 @@
 import {
-  pgTable, pgEnum, serial, text, integer, boolean, timestamp, date, index, primaryKey,
+  pgTable, pgEnum, serial, text, integer, boolean, timestamp, date, index, primaryKey, unique,
 } from 'drizzle-orm/pg-core'
 
 import { sql } from 'drizzle-orm'
@@ -94,11 +94,25 @@ export const planItems = pgTable('plan_items', {
   id: serial('id').primaryKey(),
   userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
-  stepId: integer('step_id').notNull().unique().references(() => taskSteps.id, { onDelete: 'cascade' }),
+  stepId: integer('step_id').notNull().references(() => taskSteps.id, { onDelete: 'cascade' }),
   scope: text('scope').notNull(),
   startDate: date('start_date', { mode: 'string' }).notNull(),
   position: integer('position').notNull().default(0),
-}, (t) => [index('plan_items_user_idx').on(t.userId)])
+}, (t) => [index('plan_items_user_idx').on(t.userId), unique('plan_items_step_day_unique').on(t.stepId, t.startDate)]) // a step can be planned on several days, once on each
+
+// The timesheet: a person's own record of working on a task. An entry is ready, running, paused or ended; a running one
+// that is still running when its day ends is abandoned. Time itself is kept in time_logs, as before.
+export const timeEntries = pgTable('time_entries', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  stepId: integer('step_id').notNull().references(() => taskSteps.id, { onDelete: 'cascade' }),
+  day: date('day', { mode: 'string' }).notNull(),
+  status: text('status').notNull().default('ready'), // ready | running | paused | ended | abandoned
+  runStartedAt: ts('run_started_at'),
+  minutes: integer('minutes').notNull().default(0),
+  createdAt: ts('created_at').notNull().defaultNow(),
+}, (t) => [index('time_entries_user_idx').on(t.userId, t.day)])
 
 export const templates = pgTable('templates', {
   id: serial('id').primaryKey(),

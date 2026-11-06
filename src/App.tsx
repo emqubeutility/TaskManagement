@@ -231,7 +231,7 @@ function Shell({ me }: { me: User }) {
   })
 
   const tabs: [Tab, string, IconName][] = [
-    ['overview', 'Overview', 'grid'], ['board', 'Board', 'board'], ['tracker', 'Tracker', 'table'], ['list', 'List', 'list'],
+    ['overview', 'Overview', 'grid'], ['board', 'Board', 'board'], ['plan', 'Plan', 'calendar'], ['tracker', 'Tracker', 'table'], ['list', 'List', 'list'],
     ['messages', 'Messages', 'message'], ['templates', 'Templates', 'layers'], ['import', 'Import / Clone', 'upload'],
   ]
   if (me.role === 'admin') tabs.push(['admin', 'Admin / Users', 'users'], ['clients', 'Clients', 'briefcase'], ['types', 'Task types', 'tag'])

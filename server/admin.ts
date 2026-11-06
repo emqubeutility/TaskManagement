@@ -1,6 +1,6 @@
 import { zValidator } from '@hono/zod-validator'
 import bcrypt from 'bcryptjs'
-import { asc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { z } from 'zod'
@@ -185,6 +185,25 @@ templateRoutes.post('/', zValidator('json', z.object({ name: z.string().trim().m
     return t.id
   })
   return c.json({ id, name, userIds }, 201)
+})
+
+templateRoutes.put('/:id', zValidator('json', z.object({ name: z.string().trim().min(1).max(100), userIds: z.array(z.number().int()).min(1).max(30) })), async (c) => {
+  const { name, userIds } = c.req.valid('json')
+  const me = c.get('user')
+  const id = idParam(c.req.param('id'))
+  const db = getDb()
+  const [t] = await db.select().from(templates).where(eq(templates.id, id))
+  if (!t) throw new HTTPException(404, { message: 'Template not found' })
+  if (me.role !== 'admin' && t.createdBy !== me.id) throw new HTTPException(403, { message: 'Only the creator or an admin can edit this' })
+  if (new Set(userIds).size !== userIds.length) throw new HTTPException(400, { message: 'A person can only appear once in a flow' })
+  const [dupe] = await db.select({ id: templates.id }).from(templates).where(and(eq(templates.name, name), ne(templates.id, id)))
+  if (dupe) throw new HTTPException(409, { message: 'A template with that name exists' })
+  await db.transaction(async (tx) => {
+    await tx.update(templates).set({ name }).where(eq(templates.id, id))
+    await tx.delete(templateSteps).where(eq(templateSteps.templateId, id))
+    await tx.insert(templateSteps).values(userIds.map((userId, i) => ({ templateId: id, userId, position: i + 1 })))
+  })
+  return c.json({ id, name, userIds })
 })
 
 templateRoutes.delete('/:id', async (c) => {

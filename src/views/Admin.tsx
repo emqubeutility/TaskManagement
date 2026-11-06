@@ -3,7 +3,7 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import { api } from '../api'
 import { confirmDialog, notifySuccess } from '../dialogs'
 import { go, parseAdminRoute, useHash, type AdminSection } from '../hash'
-import { Icon } from '../icons'
+import { DetailHead, FormFooter } from './Page'
 import { useClients, useTasks, useTypes, useUsers } from '../hooks'
 import { currentStep, STATUS_LABEL, type Lookup, type Task, type User } from '../types'
 
@@ -11,13 +11,7 @@ const ALL = { month: '', owner: '', client: '', type: '' }
 
 function PageHead({ section, back, title, children }: { section: AdminSection; back: string; title: ReactNode; children?: ReactNode }) {
   return (
-    <div className="page-head">
-      <div>
-        <button className="link crumb" onClick={() => go(`/${section}`)}><Icon name="back" size={14} /> {back}</button>
-        <h2>{title}</h2>
-      </div>
-      <div className="head-actions">{children}</div>
-    </div>
+    <DetailHead back={() => go(`/${section}`)} backLabel={`Back to ${back.toLowerCase()}`} title={title}>{children}</DetailHead>
   )
 }
 
@@ -128,10 +122,7 @@ function NewUserForm() {
           <option value="admin">Admin: also manages people and lists</option>
         </select>
       </label>
-      <div className="form-actions">
-        <button className="primary" disabled={create.isPending}>Create account</button>
-        <button type="button" onClick={() => go('/users')}>Cancel</button>
-      </div>
+      <FormFooter submitLabel="Create account" busy={create.isPending} onCancel={() => go('/users')} />
     </form>
   )
 }
@@ -177,6 +168,7 @@ function UserCard({ user, me, editing, open, total }: { user: User; me: User; ed
         <Fact label="Open tasks">{open}</Fact>
         <Fact label="Tasks in a flow">{total}</Fact>
       </dl>
+      {editing && <FormFooter submitLabel="Save changes" busy={patch.isPending} onCancel={() => go(`/users/${user.id}`)} />}
     </form>
   )
 }
@@ -199,8 +191,6 @@ function UserDetail({ user, me, editing }: { user: User; me: User; editing: bool
       <PageHead section="users" back="All people" title={editing ? `Editing ${user.name}` : user.name}>
         {editing ? (
           <>
-            <button className="primary" form="user-form" disabled={patch.isPending}>Save changes</button>
-            <button type="button" onClick={() => go(`/users/${user.id}`)}>Cancel</button>
             {resetButton}
           </>
         ) : (
@@ -344,8 +334,6 @@ function LookupDetail({ cfg, item, editing, tasks, busy, badge, onToggle, onSave
       <PageHead section={section} back={`All ${title.toLowerCase()}`} title={editing ? `Editing ${item.name}` : item.name}>
         {editing ? (
           <>
-            <button className="primary" form="lookup-form" disabled={busy}>Save changes</button>
-            <button type="button" onClick={() => { setName(item.name); setActive(item.active); go(`/${section}/${item.id}`) }}>Cancel</button>
           </>
         ) : (
           <>
@@ -367,6 +355,7 @@ function LookupDetail({ cfg, item, editing, tasks, busy, badge, onToggle, onSave
           </Fact>
           <Fact label="Tasks">{tasks.length}</Fact>
         </dl>
+        {editing && <FormFooter submitLabel="Save changes" busy={busy} onCancel={() => { setName(item.name); setActive(item.active); go(`/${section}/${item.id}`) }} />}
         {!item.active && !editing && <p className="muted">Hidden {title.toLowerCase()} no longer appear in the task form or filters. Old tasks keep them.</p>}
       </form>
       <h3 className="spaced">Tasks</h3>
@@ -385,10 +374,7 @@ function NewLookupForm({ singular, busy, onSave, onCancel }: {
   return (
     <form className="card form-card" onSubmit={(e) => { e.preventDefault(); onSave(name.trim()) }}>
       <label>{singular} name<input value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} autoFocus /></label>
-      <div className="form-actions">
-        <button className="primary" disabled={busy}>Add {singular.toLowerCase()}</button>
-        <button type="button" onClick={onCancel}>Cancel</button>
-      </div>
+      <FormFooter submitLabel={`Add ${singular.toLowerCase()}`} busy={busy} onCancel={onCancel} />
     </form>
   )
 }

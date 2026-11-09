@@ -40,6 +40,7 @@ export function Card({ task, me, index, count, onEdit, move }: {
 }) {
   const { act, pass } = useTaskActions()
   const users = useUsers().data ?? []
+  const clientName = (useClients().data ?? []).find((c) => c.id === task.clientId)?.name
   const step = currentStep(task)
   const mine = step?.userId === me.id
   // Where this step sits in my plan, if I planned it.
@@ -108,6 +109,7 @@ export function Card({ task, me, index, count, onEdit, move }: {
         )}
       </div>
       <div className="meta">
+        {clientName && <span className="chip client-chip" title="Client">{clientName}</span>}
         {task.dueDate && (
           <span className={overdue ? 'chip bad' : dueToday ? 'chip warn' : 'chip'}>
             {dueToday ? 'Due today' : `${overdue ? 'Overdue ' : 'Due '}${dueDay(task.dueDate)}`}

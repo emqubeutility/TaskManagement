@@ -1,7 +1,8 @@
 import { useClients, useMonths, useTypes, useUsers } from '../hooks'
 import type { Filters } from '../types'
 
-export function FilterBar({ filters, onChange }: { filters: Filters; onChange: (f: Filters) => void }) {
+/** `planView`: the Plan tab has its own month and person, so only client and type are offered. */
+export function FilterBar({ filters, onChange, planView }: { filters: Filters; onChange: (f: Filters) => void; planView?: boolean }) {
   const months = useMonths().data ?? []
   const users = useUsers().data ?? []
   const clients = useClients().data ?? []
@@ -11,18 +12,18 @@ export function FilterBar({ filters, onChange }: { filters: Filters; onChange: (
 
   return (
     <div className="filters">
-      <label>Month
+      {!planView && <label>Month
         <select value={filters.month} onChange={set('month')}>
           <option value="">All months</option>
           {monthOptions.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
-      </label>
-      <label>Owner
+      </label>}
+      {!planView && <label>Owner
         <select value={filters.owner} onChange={set('owner')}>
           <option value="">Anyone</option>
           {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
-      </label>
+      </label>}
       <label>Client
         <select value={filters.client} onChange={set('client')}>
           <option value="">All clients</option>

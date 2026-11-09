@@ -6,7 +6,6 @@ import { Icon } from '../icons'
 import type { Task, TimeEntry } from '../types'
 
 const LABEL: Record<TimeEntry['status'], string> = { ready: 'Ready', running: 'Running', paused: 'Paused', ended: 'Ended', abandoned: 'Abandoned' }
-const clock = (ms: number) => { const m = Math.max(0, Math.floor(ms / 60_000)); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}` }
 const minutesSince = (iso: string | null, now: number) => (iso ? Math.max(0, Math.round((now - Date.parse(iso)) / 60_000)) : 0)
 
 /** Asks which day an abandoned entry goes to, and whether to move it there or copy it. */
@@ -44,15 +43,7 @@ export function useTimer(tasks: Task[]) {
   const today = dubaiToday()
   const entries = useTimesheet().data ?? []
   const ts = useTimesheetActions()
-  const [now, setNow] = useState(() => Date.now())
   const [again, setAgain] = useState<TimeEntry | null>(null)
-  const running = entries.some((e) => e.status === 'running')
-  useEffect(() => {
-    if (!running) return
-    setNow(Date.now())
-    const t = setInterval(() => setNow(Date.now()), 15_000)
-    return () => clearInterval(t)
-  }, [running])
   const busy = Object.values(ts).some((m) => m.isPending)
   const titleOf = (e: { taskId: number }) => tasks.find((t) => t.id === e.taskId)?.title ?? 'Task'
 
@@ -102,7 +93,7 @@ export function useTimer(tasks: Task[]) {
       onPick={(mode, day) => { (mode === 'move' ? ts.move : ts.copy).mutate({ id: again.id, day }); setAgain(null) }}
     />
   )
-  return { entries, forStep, start, pause, end, setAgain, busy, now, dialog }
+  return { entries, forStep, start, pause, end, setAgain, busy, dialog }
 }
 
 export type Timer = ReturnType<typeof useTimer>
@@ -111,13 +102,12 @@ export type Timer = ReturnType<typeof useTimer>
 export function TimerControls({ stepId, timer }: { stepId: number; timer: Timer }) {
   const e = timer.forStep(stepId)
   const { busy } = timer
-  const logged = e ? e.minutes + (e.status === 'running' ? minutesSince(e.runStartedAt, timer.now) : 0) : 0
+  const logged = e?.minutes ?? 0 // only time already logged; a running timer shows no clock
   return (
     <div className={'plan-timer' + (e ? ' ts-' + e.status : '')}>
       {e && e.status !== 'ready' && (
         <span className="ts-meta">
           <span className={'badge ts-badge ts-badge-' + e.status}>{LABEL[e.status]}</span>
-          {e.status === 'running' && e.runStartedAt && <span className="ts-clock">{clock(timer.now - Date.parse(e.runStartedAt))}</span>}
           {e.status !== 'abandoned' && logged > 0 && <span className="muted">{logged} min</span>}
         </span>
       )}

@@ -168,13 +168,12 @@ const STAGES: { status: StepStatus; label: string }[] = [
   { status: 'active', label: 'In progress' },
 ]
 
-export function Board({ me, filters }: { me: User; filters: Filters }) {
+export function Board({ me, filters, mode, onMode }: { me: User; filters: Filters; mode: 'stages' | 'plan'; onMode: (m: 'stages' | 'plan') => void }) {
   const tasksQ = useTasks(filters, 'board')
   const users = (useUsers().data ?? []).filter((u) => u.active)
   const { reorder } = useTaskActions()
   const [editing, setEditing] = useState<Task | 'new' | null>(null)
   const [selected, setSelected] = useState<string>(String(me.id))
-  const [mode, setMode] = useState<'stages' | 'plan'>('stages')
   // The To do column has two tabs: tasks sent to the person that they have not accepted yet, and the ones they accepted.
   const [todoTab, setTodoTab] = useState<'offered' | 'todo'>('todo')
 
@@ -265,14 +264,14 @@ export function Board({ me, filters }: { me: User; filters: Filters }) {
       <div className="toolbar">
         <button className="primary" onClick={() => setEditing('new')}>+ New task</button>
         <div className="seg" role="tablist" aria-label="Board view">
-          <button type="button" role="tab" aria-selected={mode === 'stages'} className={mode === 'stages' ? 'on' : ''} onClick={() => setMode('stages')}>Stages</button>
-          <button type="button" role="tab" aria-selected={mode === 'plan'} className={mode === 'plan' ? 'on' : ''} onClick={() => setMode('plan')}><Icon name="calendar" size={14} /> Plan</button>
+          <button type="button" role="tab" aria-selected={mode === 'stages'} className={mode === 'stages' ? 'on' : ''} onClick={() => onMode('stages')}>Stages</button>
+          <button type="button" role="tab" aria-selected={mode === 'plan'} className={mode === 'plan' ? 'on' : ''} onClick={() => onMode('plan')}><Icon name="calendar" size={14} /> Plan</button>
         </div>
         <span className="spacer" />
         {tasksQ.isFetching && <span className="muted">Refreshing…</span>}
         {tasksQ.isError && <span className="error">Could not load tasks: {tasksQ.error.message}</span>}
       </div>
-      {mode === 'plan' ? <PlanBoard owner={me} me={me} /> : <div className="board-layout">
+      {mode === 'plan' ? <PlanBoard owner={me} me={me} withNew={false} filters={filters} /> : <div className="board-layout">
         <aside className="board-side">
           <button type="button" className={selected === UNASSIGNED ? 'side-pick active' : 'side-pick'} onClick={() => setSelected(UNASSIGNED)} title="Tasks with no people in their flow yet">
             <span className="side-name">No flow yet</span><span className="count">{unassigned.length}</span>

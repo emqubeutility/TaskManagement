@@ -98,8 +98,6 @@ timesheetRoutes.post('/:id/start', async (c) => {
   if (entry.status !== 'ready' && entry.status !== 'paused') throw new HTTPException(409, { message: `A ${entry.status} entry cannot be started` })
   const today = dubaiToday()
   if (entry.day > today) throw new HTTPException(409, { message: 'This entry is for a later day' })
-  const [running] = await db.select({ id: timeEntries.id }).from(timeEntries).where(and(eq(timeEntries.userId, me.id), eq(timeEntries.status, 'running')))
-  if (running) throw new HTTPException(409, { message: 'Another timer is running. Pause or end it first.' })
   const step = await heldStep(db, me.id, entry.stepId)
   if (step.status === 'todo') {
     const [task] = await db.select({ version: tasks.version }).from(tasks).where(eq(tasks.id, entry.taskId))

@@ -197,6 +197,7 @@ const ADMIN_TABS: Tab[] = ['admin', 'clients', 'types']
 function Shell({ me }: { me: User }) {
   const qc = useQueryClient()
   const [mainTab, setMainTab] = useState<Tab>('overview')
+  const [boardMode, setBoardMode] = useState<'stages' | 'plan'>('stages')
   const section = sectionOf(useHash())
   // Admin pages live in the URL hash (#/users/12/edit); every other tab is plain state.
   const tab: Tab = me.role === 'admin' && section ? SECTION_TAB[section] : mainTab
@@ -300,10 +301,10 @@ function Shell({ me }: { me: User }) {
       {tab !== 'messages' && <div className="topbar">{(tab === 'board' || tab === 'plan') && <RefreshButton />}<InboxBell me={me} onOpenChat={openChat} /></div>}
       {tab !== 'messages' && <h1 className="page-title">{tab === 'overview' ? `Hello, ${me.name.split(' ')[0]}` : title}</h1>}
       {tab !== 'messages' && <p className="page-sub">{SUBTITLE[tab]}</p>}
-      {filtered && <FilterBar filters={filters} onChange={setFilters} />}
+      {filtered && <FilterBar filters={filters} onChange={setFilters} planView={tab === 'board' && boardMode === 'plan'} />}
       <main>
         {tab === 'overview' && <Overview me={me} goBoard={() => setTab('board')} />}
-        {tab === 'board' && <Board me={me} filters={filters} />}
+        {tab === 'board' && <Board me={me} filters={filters} mode={boardMode} onMode={setBoardMode} />}
         {tab === 'plan' && <PlanBoard owner={me} me={me} />}
         {tab === 'tracker' && <Tracker me={me} filters={filters} />}
         {tab === 'list' && <ListView me={me} filters={filters} />}

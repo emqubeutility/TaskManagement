@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { dubaiMonth, dubaiToday } from '../../shared/dates'
 import { defaultDay, monthName, monthShort, shiftMonth, slotOf, weekDays, weekLabel, weekOfDay, weeksIn, type PlanSlot } from '../../shared/plan'
 import { choiceDialog } from '../dialogs'
-import { usePlan, usePlanActions, useTaskActions, useTasks } from '../hooks'
+import { useClients, usePlan, usePlanActions, useTaskActions, useTasks, useTypes } from '../hooks'
 import { Icon } from '../icons'
 import { currentStep, STATUS_LABEL, type PlanItem, type Step, type Task, type User } from '../types'
 import { Avatar } from './FlowEditor'
@@ -235,7 +235,8 @@ function PlanCard({ entry, me, month, editable, onOpen, onPlan, reorder, timer, 
     setTimeout(() => { card.classList.remove('drag-pick'); card.classList.add('is-dragging') }, 0)
   }
   const onDragEnd = (e: DragEvent) => (e.currentTarget as HTMLElement).classList.remove('is-dragging', 'drag-pick')
-  const planned = slot === 'unplanned' ? null : { month, week: slot }
+  const clientName = (useClients().data ?? []).find((c) => c.id === task.clientId)?.name
+  const typeName = (useTypes().data ?? []).find((t) => t.id === task.typeId)?.name
   return (
     <div
       className={`plan-card status-${step.status}${done ? ' is-done' : ''}${reorder?.mark?.id === step.id ? (reorder.mark.after ? ' mark-after' : ' mark-before') : ''}`}
@@ -256,16 +257,30 @@ function PlanCard({ entry, me, month, editable, onOpen, onPlan, reorder, timer, 
           ? <span className={overdue ? 'plan-due bad' : dueToday ? 'plan-due warn' : 'plan-due'}>{dueToday ? 'Due today' : `${overdue ? 'Overdue ' : 'Due '}${dueText(task.dueDate)}`}</span>
           : slot === 'unplanned' && <span className="plan-due">No due date</span>}
       </div>
+      {(clientName || typeName) && (
+        <div className="plan-tags">
+          {clientName && <span className="chip client-chip" title="Client">{clientName}</span>}
+          {typeName && <span className="chip" title="Type">{typeName}</span>}
+        </div>
+      )}
       {timer}
-      {editable && !done && !planned && <PlanSelect task={task} step={step} me={me} value={null} month={month} className="plan-move" onPick={(s) => onPlan(entry, s)} />}
     </div>
   )
 }
 
 /** The month plan for one person: pick a week, then drop tasks on its days. Only that person can change it. */
-export function PlanBoard({ owner, me }: { owner: User; me: User }) {
+export function PlanBoard({ owner, me, withNew = true, filters }: { owner: User; me: User; withNew?: boolean; filters?: { client: string; type: string } }) {
   const editable = owner.id === me.id
-  const tasks = useTasks(ALL, 'board').data ?? []
+  const allTasks = useTasks(ALL, 'board').data ?? []
+  const clients = useClients().data ?? []
+  const types = useTypes().data ?? []
+  // Inside the Board the page's own Client and Type filters are used; on the Plan page they sit in the toolbar here.
+  const [ownClient, setClientId] = useState('')
+  const [ownType, setTypeId] = useState('')
+  const clientId = filters ? filters.client : ownClient
+  const typeId = filters ? filters.type : ownType
+  const [adding, setAdding] = useState(false)
+  const tasks = allTasks.filter((t) => (!clientId || t.clientId === Number(clientId)) && (!typeId || t.typeId === Number(typeId)))
   const plan = usePlan(owner.id).data ?? []
   const { set } = usePlanActions()
   const { act } = useTaskActions()
@@ -365,6 +380,24 @@ export function PlanBoard({ owner, me }: { owner: User; me: User }) {
 
   return (
     <>
+      {!filters && editable && (
+        <div className="toolbar plan-toolbar">
+          {withNew && editable && <button type="button" className="primary" onClick={() => setAdding(true)}>+ New task</button>}
+          <label className="plan-filter">Client
+            <select value={clientId} onChange={(e) => setClientId(e.target.value)}>
+              <option value="">All clients</option>
+              {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </label>
+          <label className="plan-filter">Type
+            <select value={typeId} onChange={(e) => setTypeId(e.target.value)}>
+              <option value="">All types</option>
+              {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </label>
+          {(clientId || typeId) && <button type="button" className="link" onClick={() => { setClientId(''); setTypeId('') }}>Clear</button>}
+        </div>
+      )}
       <div className="board-head">
         <Avatar userId={owner.id} size={36} />
         <div>
@@ -419,7 +452,8 @@ export function PlanBoard({ owner, me }: { owner: User; me: User }) {
             {poolGroups.map((g) => (
               <div key={g.status} className="pool-group">
                 <h4>{g.label} <span className="count">{g.list.length}</span></h4>
-                {g.list.map((e) => <PlanCard key={`${e.step.id}-${e.item?.id ?? 'p'}`} entry={e} me={me} month={month} editable onOpen={() => setOpen(e.task)} onPlan={ask} />)}
+                {g.list.map((e) => <PlanCard key={`${e.step.id}-${e.item?.id ?? 'p'}`} entry={e} me={me} month={month} editable onOpen={() => setOpen(e.task)} onPlan={ask}
+                  timer={g.status === 'offered' ? <button type="button" className="primary plan-accept" onClick={() => act.mutate({ task: e.task, action: 'accept' })}>Accept</button> : undefined} />)}
               </div>
             ))}
             {!pool.length && <p className="muted empty">Everything is planned</p>}
@@ -483,7 +517,9 @@ export function PlanBoard({ owner, me }: { owner: User; me: User }) {
         />
       )}
       {timer.dialog}
+      {(timer.busy || act.isPending) && <div className="page-loader" role="status" aria-label="Working"><span className="page-loader-ring" /></div>}
       {open && <TaskDialog task={open} me={me} defaultMonth="" onClose={() => setOpen(null)} />}
+      {adding && <TaskDialog me={me} defaultMonth="" onClose={() => setAdding(false)} />}
     </>
   )
 }
